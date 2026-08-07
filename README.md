@@ -28,7 +28,12 @@ npm run build      # 本番ビルド
 | `/spec` | 要件定義 | `docs/01_requirements.md`, `docs/adr/` |
 | `/design` | 基本設計・詳細設計 | `docs/02_architecture.md`, `docs/03_detailed-design.md` |
 | `/impl` | 実装 | `src/` |
+| `/conform` | 設計適合レビュー | 報告のみ |
+| `/assets` | 画像素材の発注仕様 | `docs/05_assets.md` |
 | `/balance` | バランス調整 | `src/data/` |
+
+画像は imagegen で生成する。`/assets` で仕様を作り、Codex 経由で生成したものを
+`public/assets/` に置く。
 
 `.ts` を編集すると hook（`.claude/hooks/check.sh`）が型チェックと関連テストを自動実行する。
 
