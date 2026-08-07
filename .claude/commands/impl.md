@@ -7,8 +7,10 @@ description: 実装フェーズ。Codex (gpt-5.6-luna) に1モジュールずつ
 
 ## 前提条件
 
-`docs/03_detailed-design.md` が**関数シグネチャのレベルまで**書けていること。
-曖昧なままなら Codex に渡さない。先に `/design` を仕上げる。
+1. `docs/03_detailed-design.md` が**関数シグネチャのレベルまで**書けていること。
+   曖昧なままなら Codex に渡さない。先に `/design` を仕上げる。
+2. **`/test` が済んでおり、テストが先に存在すること。**
+   Codex の仕事は「既にあるテストを通す実装を書く」であって、テストを書くことではない。
 
 ## 順序
 
@@ -32,7 +34,7 @@ git add -A && git commit -m "wip: <直前までの内容>"
 **2. Codex に実装させる**
 
 ```bash
-codex exec --model gpt-5.6-luna --full-auto "docs/03_detailed-design.md の <モジュール名> を実装し、tests/unit に対応するテストを書く。npm run check が通るまで仕上げる。" < /dev/null
+codex exec --model gpt-5.6-luna --full-auto "docs/03_detailed-design.md の <モジュール名> を実装し、既存の tests/unit/<モジュール名>.test.ts を通す。テストは変更しない。npm run check が通るまで仕上げる。" < /dev/null
 ```
 
 `< /dev/null` は必須。付けないと Codex が stdin からの追加入力を待って止まる。
@@ -47,6 +49,10 @@ git diff --stat && npm run check
 ```
 
 **4. 差分を自分で読む。** `npm run check` は通るが設計と違う、という状態はあり得る。
+
+**必ず `git diff tests/` を確認する。** テストが書き換えられていたら、
+それは「実装を直す代わりにテストを緩めた」ということなので、
+`git checkout tests/` で戻してから差し戻す。
 
 ## エラーが出たときの切り分け
 

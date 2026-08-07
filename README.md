@@ -27,10 +27,14 @@ npm run build      # 本番ビルド
 | `/research` | 調査 | `docs/00_research.md` |
 | `/spec` | 要件定義 | `docs/01_requirements.md`, `docs/adr/` |
 | `/design` | 基本設計・詳細設計 | `docs/02_architecture.md`, `docs/03_detailed-design.md` |
+| `/test` | テスト作成（実装より先） | `tests/` |
 | `/impl` | 実装 | `src/` |
 | `/conform` | 設計適合レビュー | 報告のみ |
 | `/assets` | 画像素材の発注仕様 | `docs/05_assets.md` |
 | `/balance` | バランス調整 | `src/data/` |
+
+`/test` は `/impl` より先に行う。実装と同じモデルにテストを書かせると、
+テストが仕様ではなく実装を追認するため。
 
 画像は imagegen で生成する。`/assets` で仕様を作り、Codex 経由で生成したものを
 `public/assets/` に置く。
