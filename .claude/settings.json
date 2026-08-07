@@ -7,6 +7,8 @@
       "Bash(npm ci:*)",
       "Bash(npx tsc:*)",
       "Bash(npx vitest:*)",
+      "Bash(./scripts/check-layers.sh)",
+      "Bash(codex exec:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
