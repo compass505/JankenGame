@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run test"
+    "check:layers": "./scripts/check-layers.sh",
+    "check": "npm run typecheck && npm run test && npm run check:layers"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

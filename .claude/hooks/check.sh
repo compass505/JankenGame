@@ -51,4 +51,13 @@ if ! out=$(npx --no-install vitest related --run --passWithNoTests "$file" 2>&1)
   exit 2
 fi
 
+# レイヤ規約の機械的な検査。ここで拾える違反にモデルのトークンを使わない。
+if ! out=$(./scripts/check-layers.sh 2>&1); then
+  {
+    echo "レイヤ規約に違反しています。次の作業に進む前に直してください。"
+    echo "$out"
+  } >&2
+  exit 2
+fi
+
 exit 0
