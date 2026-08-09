@@ -1,6 +1,8 @@
 # 詳細設計
 
 > ステータス: **確定**（2026-08-09）。
+> **2026-08-10 追記**: 手の「熱」を追加（節2.5・節5）。`docs/adr/0002-hand-heat.md`。
+> **`domain/battle.ts` と `BattleState` は変更しない。**
 > **この文書は「読んで実装できる」粒度で書く。** `/test` はここからテストを書き、
 > `/impl` は Codex がここだけを見て実装する。曖昧な箇所を残さない。
 
@@ -80,8 +82,88 @@ export function buildHandTable(base: HandTable, counts: UpgradeCounts): HandTabl
   強化されると終了保証が壊れる。`docs/01_requirements.md`）
 - `buildHandTable(base, NO_UPGRADES)` は `base` と同じ値
 
-**具体例**: `base.rock = { damage: 3, heal: 0, stareBonus: 2 }` に `counts.rock = 1` を渡すと
-`{ damage: 4, heal: 0, stareBonus: 2 }`。
+**具体例**: `base.rock = { damage: 3, heal: 0, stareBonus: 3 }` に `counts.rock = 1` を渡すと
+`{ damage: 4, heal: 0, stareBonus: 3 }`。
+
+---
+
+## 2.5. 手の「熱」（`src/domain/handTable.ts` に同居）
+
+`docs/adr/0002-hand-heat.md`。**同じ手を続けて出すと威力が下がり、使わなければ戻る。**
+
+```ts
+import type { Hand } from '@/domain/hand';
+
+export type HeatCounts = Readonly<Record<Hand, number>>;
+
+/** 熱がこの値たまるごとに弱化が1段深くなる */
+export const HEAT_GAIN = 4;
+/** 弱化の上限 */
+export const HEAT_MAX_PENALTY = 3;
+export const NO_HEAT: HeatCounts; // { rock: 0, scissors: 0, paper: 0 }
+
+/** 熱による弱化を damage にだけ適用した表を返す */
+export function applyHeat(base: HandTable, heat: HeatCounts): HandTable;
+
+/** ターン終わりの更新。全部を1冷ましてから、出した手に HEAT_GAIN を足す */
+export function advanceHeat(heat: HeatCounts, used: Hand): HeatCounts;
+```
+
+### `applyHeat`
+
+```
+各手 h について:
+    penalty = min(HEAT_MAX_PENALTY, floor(heat[h] / HEAT_GAIN))
+    damage  = max(1, base[h].damage - penalty)
+heal と stareBonus は動かさない
+```
+
+### `advanceHeat`
+
+```
+各手 h について: next[h] = max(0, heat[h] - 1)
+そのあと next[used] += HEAT_GAIN
+```
+
+**順序が重要。** 先に全部冷ましてから足す。逆にすると出した手が1ターンぶん軽く冷める。
+
+**不変条件**
+
+- `applyHeat(base, NO_HEAT)` は `base` と同じ値
+- `applyHeat` は `heal` と `stareBonus` を変えない（**強化と同じく damage にしか触らない**）
+- `damage` は 1 未満にならない
+- 弱化量は `HEAT_MAX_PENALTY` を超えない
+- `advanceHeat` は引数を書き換えず、新しいオブジェクトを返す
+- `heat[h] >= 0`
+
+**具体例**
+
+```
+base.scissors = { damage: 5, heal: 0, stareBonus: 0 }
+
+heat.scissors = 0  → penalty 0 → damage 5
+heat.scissors = 4  → penalty 1 → damage 4
+heat.scissors = 7  → penalty 1 → damage 4     （floor(7/4) = 1）
+heat.scissors = 13 → penalty 3 → damage 2     （floor(13/4) = 3）
+heat.scissors = 40 → penalty 3 → damage 2     （上限で止まる）
+
+advanceHeat({rock:0,scissors:4,paper:0}, 'scissors') = {rock:0,scissors:7,paper:0}
+advanceHeat({rock:0,scissors:4,paper:0}, 'rock')     = {rock:4,scissors:3,paper:0}
+```
+
+### 熱・強化・耐性・にらみの適用順序
+
+**この順序を変えるとバランスの実測値と合わなくなる。**
+
+```
+1. 強化を足す      buildHandTable(BASE_HANDS, upgrades)      … damage +1 ずつ
+2. 熱を引く        applyHeat(表, heat)                        … damage −penalty、最低1
+3. 耐性を掛ける    max(1, floor(damage × resistance))         … battle.ts が既にやっている
+4. にらみを足す    + stare × stareBonus                       … 耐性も熱も掛からない
+```
+
+1と2は `application` が組み立て、3と4は `resolveTurn` が行う。
+**`domain/battle.ts` は変更しない。**
 
 ---
 
@@ -409,7 +491,7 @@ playerHp = 1、enemyHp = 1、stare = 2、あいこ
 
 ```ts
 import type { Hand } from '@/domain/hand';
-import type { UpgradeCounts, HandTable } from '@/domain/handTable';
+import type { UpgradeCounts, HandTable, HeatCounts } from '@/domain/handTable';
 import type { BattleState, TurnLog } from '@/domain/battle';
 import type { EnemyDef } from '@/domain/enemy';
 import type { Rng } from '@/lib/rng';
@@ -423,6 +505,9 @@ export interface GameState {
   readonly battle: BattleState | null;
   readonly lastLog: TurnLog | null;
   readonly cleared: boolean;
+  /** 手の熱。戦闘ごとに 0 に戻す（`docs/adr/0002-hand-heat.md`） */
+  readonly playerHeat: HeatCounts;
+  readonly enemyHeat: HeatCounts;
 }
 
 export const PLAYER_MAX_HP = 15;
@@ -435,18 +520,23 @@ export function backToTitle(state: GameState): GameState;
 
 /** 表示用。stageIndex が範囲外なら null */
 export function currentEnemy(state: GameState): EnemyDef | null;
-/** 表示用。強化を適用した後のプレイヤーの手 */
+/**
+ * 表示用。**強化と熱の両方**を適用した後のプレイヤーの手。
+ * `ctx.playerHands` に渡すものと同じ値を返すこと（画面の数字と実ダメージを一致させる）
+ */
 export function playerHandTable(state: GameState): HandTable;
+/** 表示用。熱による弱化量（0〜HEAT_MAX_PENALTY）。UI が「-1」等を出すのに使う */
+export function heatPenalties(state: GameState): Readonly<Record<Hand, number>>;
 ```
 
 ### 各関数の挙動
 
 | 関数 | 前提 | やること |
 | --- | --- | --- |
-| `createGame` | — | `{ phase:'title', stageIndex:0, upgrades:NO_UPGRADES, battle:null, lastLog:null, cleared:false }` |
-| `startGame` | `phase === 'title'` | **`createGame()` の値から作り直す**（`upgrades` を `NO_UPGRADES`、`lastLog` を `null`、`cleared` を `false`、`stageIndex` を 0 にリセット）。そのうえで `createBattle(PLAYER_MAX_HP, STAGES[0])`、`phase = 'battle'` |
-| `playHand` | `phase === 'battle'` かつ `battle !== null` | `resolveTurn` を呼び、結果で分岐（下記） |
-| `chooseUpgrade` | `phase === 'upgrade'` かつ `canUpgrade(upgrades, hand)` | 強化を足し、`stageIndex + 1` の敵で `createBattle`、**`lastLog = null`**、`phase = 'battle'` |
+| `createGame` | — | 上の全フィールドの初期値。`upgrades:NO_UPGRADES`、`playerHeat`/`enemyHeat` は `NO_HEAT` |
+| `startGame` | `phase === 'title'` | **`createGame()` の値から作り直す**（`upgrades` を `NO_UPGRADES`、`lastLog` を `null`、`cleared` を `false`、`stageIndex` を 0、**両方の熱を `NO_HEAT`** にリセット）。そのうえで `createBattle(PLAYER_MAX_HP, STAGES[0])`、`phase = 'battle'` |
+| `playHand` | `phase === 'battle'` かつ `battle !== null` | `resolveTurn` を呼び、**両方の熱を進め**、結果で分岐（下記） |
+| `chooseUpgrade` | `phase === 'upgrade'` かつ `canUpgrade(upgrades, hand)` | 強化を足し、`stageIndex + 1` の敵で `createBattle`、**`lastLog = null`**、**両方の熱を `NO_HEAT` に戻し**、`phase = 'battle'` |
 | `backToTitle` | どこからでも | `createGame()` と同じ値を返す（**強化もHPも全部リセット**） |
 
 **前提を満たさない呼び出しでは、例外を投げず `state` をそのまま返す。**
@@ -478,13 +568,27 @@ result.state.outcome === 'playerLose' → phase 'result'、cleared = false
 
 ### `ctx` の組み立て
 
+**強化を足してから熱を引く**（節2.5 の適用順序）。
+
 ```
 ctx = {
-  playerHands: buildHandTable(BASE_HANDS, state.upgrades),
-  enemyHands:  BASE_HANDS,          // 敵は強化されない
+  playerHands: applyHeat(buildHandTable(BASE_HANDS, state.upgrades), state.playerHeat),
+  enemyHands:  applyHeat(BASE_HANDS, state.enemyHeat),   // 敵は強化されないが熱は持つ
   enemy:       STAGES[state.stageIndex],
 }
 ```
+
+### 熱の更新
+
+`resolveTurn` を呼んだあと、**両陣営ぶん**進める。敵が出した手は `result.log.enemyHand`。
+
+```
+playerHeat = advanceHeat(state.playerHeat, hand)
+enemyHeat  = advanceHeat(state.enemyHeat, result.log.enemyHand)
+```
+
+**決着したターンでも更新してよい**（次の戦闘の頭で `NO_HEAT` に戻るため影響しない）。
+**あいこのターンも更新する。** 手は出しているので熱はたまる。
 
 `STAGES[i]` は `noUncheckedIndexedAccess` により `EnemyDef | undefined`。
 **未定義なら `state` をそのまま返す**（進行不能な状態を作らない）。
@@ -497,6 +601,8 @@ ctx = {
 - `phase === 'title'` なら `battle === null` かつ `lastLog === null` かつ `upgrades` は全て 0
 - `0 <= stageIndex < STAGES.length`
 - `upgrades` の各値は `0..UPGRADE_MAX_PER_HAND`
+- **戦闘が始まった直後（`startGame` / `chooseUpgrade` の直後）は両方の熱が `NO_HEAT`**
+- 熱の各値は 0 以上（上限は設けない。弱化量の側が `HEAT_MAX_PENALTY` で頭打ちになる）
 - 強化のチャンスは4回、枠は6つなので、**`upgrade` で選べる手が0になることはない**
 
 > **`GameState` は判別可能ユニオンではない**ので、型のうえでは
@@ -516,11 +622,15 @@ ctx = {
 import type { HandTable } from '@/domain/handTable';
 
 export const BASE_HANDS: HandTable = {
-  rock:     { damage: 3, heal: 0, stareBonus: 2 },
-  scissors: { damage: 6, heal: 0, stareBonus: 0 },
+  rock:     { damage: 3, heal: 0, stareBonus: 3 },
+  scissors: { damage: 5, heal: 0, stareBonus: 0 },
   paper:    { damage: 4, heal: 3, stareBonus: 0 },
 };
 ```
+
+> **グーの `stareBonus` は 2→3、チョキの `damage` は 6→5**（`docs/adr/0002-hand-heat.md`）。
+> 熱の導入で手の価値の計算が変わったため、あわせて改定した。
+> **非対称の構造（グー=溜め／チョキ=火力／パー=回復）は変えていない。**
 
 ### `src/data/enemies.ts`
 
@@ -617,7 +727,16 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 - **増えた瞬間が分かる**こと（色か大きさの変化。アニメーションは作り込まない）
 - グーのボタンに、いま出したら何ダメージかを出す。
   **`playerHandTable(state).rock` から計算すること**（`damage + stare * stareBonus`）。
-  `3 + にらみ×2` と直書きすると**強化ぶんが表示に乗らない**
+  `3 + にらみ×3` と直書きすると**強化ぶんも熱ぶんも表示に乗らない**
+
+### 熱が見えること（`docs/adr/0002-hand-heat.md`）
+
+**`playerHandTable` は強化と熱を両方適用した表を返す**ので、ボタンの数字は自動的に下がる。
+ただし**なぜ下がったのかが分からないと理不尽になる**ので、次を満たす。
+
+- **弱化している手は、下がっていることが一目で分かる**（色を変える、`-1` を添える等）
+- 弱化量が深いほど強く見せる（`-1` / `-2` / `-3`）
+- **敵側の熱は画面に出さなくてよい。** 出す情報を増やすと画面が読めなくなる
 
 ### `src/main.ts`
 
@@ -642,3 +761,15 @@ const rng = createRng(Date.now() >>> 0);
 7. `ui/` 一式
 
 **1〜4 が終わった時点で `tests/unit/` が全部通る**状態になっているのが目安。
+
+### 熱の追加ぶん（2026-08-10・`docs/adr/0002-hand-heat.md`）
+
+**すべて実装済みのモジュールへの追加。** この順で入れる。
+
+1. `domain/handTable.ts` — `HeatCounts` / `applyHeat` / `advanceHeat` / 定数（節2.5）
+2. `data/hands.ts` — グーの `stareBonus` 3、チョキの `damage` 5
+3. `application/game.ts` — `GameState` に熱2つ、`ctx` の組み立て、熱の更新、リセット
+4. `ui/screens/battle.ts` — 弱化が見えるようにする
+
+**`domain/battle.ts` は触らない。** 触る必要が出たら設計が間違っているので、
+実装を進める前に `docs/03` に戻ること。

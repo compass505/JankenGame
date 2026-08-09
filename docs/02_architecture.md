@@ -13,7 +13,7 @@ src/
     rng.ts              シード付き乱数（実装済み）
   domain/               純粋ロジック。data を import しない
     hand.ts             Hand / Outcome / judge
-    handTable.ts        手の値、強化の適用
+    handTable.ts        手の値、強化の適用、熱の適用と更新
     enemy.ts            EnemyDef の型、敵の手の抽選
     battle.ts           BattleState、1ターンの解決
   data/                 数値定義のみ。リテラルだけ
@@ -64,6 +64,11 @@ src/
 **増える状態は `stare` の1つだけ**（ADR 0001）。手の履歴は持たない。
 敵AIが履歴を見ないと決めたため（`docs/01_requirements.md`）、保持する理由がない。
 
+> **熱（`docs/adr/0002-hand-heat.md`）を足しても `BattleState` は変わらない。**
+> 熱は `application` が持ち、組み立て済みの `HandTable` として `ctx` で渡る。
+> `resolveTurn` は毎ターン `ctx.playerHands` を受け取る設計なので、
+> **`domain/battle.ts` は熱の存在を知らない。** これが「数値を引数で受け取る」設計の効果。
+
 ### `GameState`（application）— 1周のプレイ
 
 | フィールド | 型 | 意味 |
@@ -74,6 +79,7 @@ src/
 | `battle` | `BattleState \| null` | `title` のときだけ `null`。**`upgrade` と `result` でも最後の状態を保持する**（結果画面で最終HPを見せるため） |
 | `lastLog` | `TurnLog \| null` | 直前のターンの内訳（画面表示用） |
 | `cleared` | `boolean` | 結果画面がクリアかゲームオーバーか |
+| `playerHeat` / `enemyHeat` | `HeatCounts` | **手の熱**。戦闘ごとに `NO_HEAT` に戻す（`docs/adr/0002-hand-heat.md`） |
 
 **保存しないので、これがすべて。** リロードで `createGame()` の初期値に戻る。
 
