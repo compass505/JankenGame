@@ -53,6 +53,12 @@ report "domain から上位層への import がある（依存の逆流）" \
   "$(scan src/domain "from '(@/(ui|application)|\.\./(ui|application))")" \
   "依存は ui → application → domain の一方向。domain は誰にも依存しない。"
 
+report "domain が data を import している" \
+  "$(scan src/domain "from '(@/data|\.\./data)")" \
+  "domain は数値を知らない。手の値も敵の定義も引数で受け取ること。
+     ここを守ると、/balance で src/data を書き換えても domain のテストが壊れない。
+     型だけが必要なら、その型は domain 側に置く。"
+
 # --- src/application/ は DOM を触らないこと ---
 report "application が DOM を直接操作している" \
   "$(scan src/application '\b(document|window)\b')" \

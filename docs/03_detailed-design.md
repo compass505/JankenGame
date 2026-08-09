@@ -131,6 +131,7 @@ enemyHp * 2 <= enemyMaxHp  →  'desperate'
 ### `handProbabilities`
 
 ```
+w[h]  = Math.max(0, weights[h])     ← 負の重みは 0 として扱う
 total = w.rock + w.scissors + w.paper
 total <= 0 なら 3手とも 1/3 を返す（データ不備の保険。例外は投げない）
 
@@ -153,11 +154,16 @@ p[h]    = (1 - UNIFORM_MIX) * norm[h] + UNIFORM_MIX / 3
 p = handProbabilities(enemy, enemyPhase(enemyHp, enemyMaxHp))
 r = rng.next()                      ← rng は「ちょうど1回」呼ぶ
 acc = 0
-HANDS の順（rock, scissors, paper）に:
+for (const hand of HANDS)  ← 添字アクセスを使わない（後述）
     acc += p[hand]
     r < acc なら hand を返す
-どれにも当たらなければ HANDS の最後（paper）を返す ← 浮動小数の誤差対策
+ループを抜けたら 'paper' を返す      ← 浮動小数の誤差対策
 ```
+
+> **`HANDS[HANDS.length - 1]` と書かないこと。** `noUncheckedIndexedAccess` により
+> 配列の添字アクセスは `Hand | undefined` になり、そのまま返すと型エラーになる。
+> `for...of` なら要素は `Hand` 型になり、最後の `return 'paper'` はリテラルなので問題ない
+> （`HANDS` の順序は固定と定めてあるので、ここを直書きしてよい）。
 
 **不変条件**
 
@@ -278,18 +284,20 @@ outcome === 'draw':
 
 ```
 プレイヤーが勝った場合（v = ctx.playerHands[playerHand]、耐性は敵が持つ）
-    base   = max(1, floor(v.damage * ctx.enemy.resistance[playerHand]))
+    base   = Math.max(1, Math.floor(v.damage * ctx.enemy.resistance[playerHand]))
     dealt  = base + state.stare * v.stareBonus
     damageToEnemy  = dealt
-    healToPlayer   = clamp(min(v.heal, dealt - 1, state.playerMaxHp - state.playerHp), 0)
+    healToPlayer   = Math.max(0, Math.min(v.heal, dealt - 1, state.playerMaxHp - state.playerHp))
     damageToPlayer = 0, healToEnemy = 0
 
 敵が勝った場合（v = ctx.enemyHands[enemyHand]、プレイヤーは耐性を持たない）
     dealt  = v.damage + state.stare * v.stareBonus
     damageToPlayer = dealt
-    healToEnemy    = clamp(min(v.heal, dealt - 1, state.enemyMaxHp - state.enemyHp), 0)
+    healToEnemy    = Math.max(0, Math.min(v.heal, dealt - 1, state.enemyMaxHp - state.enemyHp))
     damageToEnemy  = 0, healToPlayer = 0
 ```
+
+**`clamp` のような自作ヘルパを作らない。** `Math.max` / `Math.min` / `Math.floor` を直接書く。
 
 > **`dealt - 1` を必ず挟むこと。** これが**戦闘の終了保証**そのもの。
 > パーは「4ダメージ＋3回復」なので通常は `min(3, 3)` で 3 のまま変わらないが、
@@ -300,8 +308,8 @@ outcome === 'draw':
 **6. HPの更新と決着判定**
 
 ```
-playerHp = clamp(state.playerHp - damageToPlayer + healToPlayer, 0, state.playerMaxHp)
-enemyHp  = clamp(state.enemyHp  - damageToEnemy  + healToEnemy,  0, state.enemyMaxHp)
+playerHp = Math.min(state.playerMaxHp, Math.max(0, state.playerHp - damageToPlayer + healToPlayer))
+enemyHp  = Math.min(state.enemyMaxHp,  Math.max(0, state.enemyHp  - damageToEnemy  + healToEnemy))
 
 playerHp <= 0 && enemyHp <= 0  →  outcome = 'playerLose'   // 引き分けは作らない
 playerHp <= 0                  →  outcome = 'playerLose'
@@ -311,20 +319,42 @@ enemyHp  <= 0                  →  outcome = 'playerWin'
 turn = state.turn + 1
 ```
 
+### 入力の前提（契約）
+
+**`domain/` は渡された値を検証しない。** 次を満たす値だけが渡される前提で書き、
+守るのは呼び出し側（`application/` と `data/`）。テストもこの範囲だけを対象にする。
+
+- `playerMaxHp` / `enemyMaxHp` は **1以上の整数**
+- `HandValue.damage` は **1以上の整数**、`heal` と `stareBonus` は **0以上の整数**
+- `resistance` は **0 より大きい有限の数**
+- `HandWeights` は **0以上の有限の数**（負なら 0 として扱う）
+- `STAGES` は**空でない**
+- `resolveTurn` に渡す `state` は `createBattle` が作ったか、`resolveTurn` が返したもの
+
 ### 不変条件（テストで縛るもの）
+
+**以下はすべて「`state.outcome === null`（未決着）の state に `resolveTurn` を呼んだとき」に成り立つ。**
+決着済みの state を渡した場合は手順0のとおり**何もしない**（`turn` も増えず、同じ state を返す）。
 
 1. `0 <= playerHp <= playerMaxHp`、`0 <= enemyHp <= enemyMaxHp`。**HPは負にならない**
 2. `0 <= stare <= STARE_MAX`
-3. `turn` は毎回ちょうど +1
-4. **決着したターンでは `playerHp + enemyHp` が必ず1以上減る**
-5. **にらみが上限のあいこでも `playerHp + enemyHp` が2減る**
+3. `turn` はちょうど +1
+4. **`playerHp + enemyHp` が増えるのは、相手を倒したターンだけ。**
+   相手が生き残るなら必ず1以上減る（あいこでにらみが上限未満のときだけ据え置き）
+5. にらみが上限のあいこでは `playerHp + enemyHp` がちょうど2減る
 6. あいこでにらみが上限未満のときは HP が動かない（`stare` だけ増える）
-7. 引数の `state` を書き換えない。必ず新しいオブジェクトを返す
-8. **連続してあいこになりうる最大ターン数は `STARE_MAX`（2）。** 3ターン目のあいこでは
-   必ずHPが減る。したがって**あいこだけで無限に続く実行列は存在しない**
+7. 引数の `state` を書き換えない。新しいオブジェクトを返す
+8. **HPが減らないターンが連続するのは、`standard` で高々2回、`stareDouble` で高々1回。**
+   にらみが上限に達した後のあいこは必ず双方1ダメージになるため
 
-> 4・5・8 を合わせると、**HP総和が高々3ターンに1回は必ず減る**ため、
-> どの入力・どの乱数列でも戦闘は有限ターンで終わる。
+> **4 の「倒したターンだけ増えうる」について。** 回復は `dealt - 1` で抑えてあるので、
+> 相手が生き残る限り総和は必ず減る。相手の残HPが `dealt` 未満のときだけ、
+> 実際の減少量が回復量を下回って総和が増えうるが、**そのターンで `outcome` が確定する**ので
+> 戦闘は終わる。終了保証は壊れない。
+> 例: 敵HP2 に4ダメージ＋3回復 → 敵は 0（−2）、自分は +3 で総和 +1。だが敵は倒れている。
+
+> **4 と 8 を合わせると、HP総和は高々3ターンに1回必ず減る。**
+> 減らないまま無限に続く実行列は存在せず、**戦闘はどの乱数列でも有限ターンで終わる。**
 > `tests/scenario/` の「あいこが連続しても進行する」はここを検証する。
 
 ### 具体例（テストにそのまま使える）
@@ -414,13 +444,22 @@ export function playerHandTable(state: GameState): HandTable;
 | 関数 | 前提 | やること |
 | --- | --- | --- |
 | `createGame` | — | `{ phase:'title', stageIndex:0, upgrades:NO_UPGRADES, battle:null, lastLog:null, cleared:false }` |
-| `startGame` | `phase === 'title'` | `stageIndex = 0`、`createBattle(PLAYER_MAX_HP, STAGES[0])`、`phase = 'battle'` |
+| `startGame` | `phase === 'title'` | **`createGame()` の値から作り直す**（`upgrades` を `NO_UPGRADES`、`lastLog` を `null`、`cleared` を `false`、`stageIndex` を 0 にリセット）。そのうえで `createBattle(PLAYER_MAX_HP, STAGES[0])`、`phase = 'battle'` |
 | `playHand` | `phase === 'battle'` かつ `battle !== null` | `resolveTurn` を呼び、結果で分岐（下記） |
-| `chooseUpgrade` | `phase === 'upgrade'` かつ `canUpgrade` | 強化を足し、`stageIndex + 1` の敵で `createBattle`、`phase = 'battle'` |
+| `chooseUpgrade` | `phase === 'upgrade'` かつ `canUpgrade(upgrades, hand)` | 強化を足し、`stageIndex + 1` の敵で `createBattle`、**`lastLog = null`**、`phase = 'battle'` |
 | `backToTitle` | どこからでも | `createGame()` と同じ値を返す（**強化もHPも全部リセット**） |
 
 **前提を満たさない呼び出しでは、例外を投げず `state` をそのまま返す。**
 UI のボタン制御が漏れても壊れないようにする。
+
+**`lastLog` は戦闘ごとにリセットする。** 次の敵に前の敵の最後のログを持ち越さない。
+`startGame` と `chooseUpgrade` の両方で `null` にする。
+
+**`STAGES` の添字が `undefined` になる経路について。**
+`STAGES` は空でない前提（節4「入力の前提」）なので `STAGES[0]` は必ず存在し、
+`chooseUpgrade` は最終ステージでは呼ばれない（`playHand` が `phase = 'result'` にするため）。
+それでも `noUncheckedIndexedAccess` により型は `EnemyDef | undefined` になるので、
+**未定義なら `state` をそのまま返す**。これは型を通すための防御であり、通常は到達しない。
 
 ### `playHand` の分岐
 
@@ -452,11 +491,18 @@ ctx = {
 
 ### 不変条件
 
-- `phase === 'battle'` ⟺ `battle !== null && battle.outcome === null`
-  （例外: `phase === 'result'` のときも `battle` は最後の状態を保持する）
+- `phase === 'battle'` なら `battle !== null && battle.outcome === null`
+- **`phase === 'upgrade'` と `'result'` のときも `battle` は最後の状態を保持する**
+  （結果画面で最終HPを見せるため。`null` に戻さない）
+- `phase === 'title'` なら `battle === null` かつ `lastLog === null` かつ `upgrades` は全て 0
 - `0 <= stageIndex < STAGES.length`
 - `upgrades` の各値は `0..UPGRADE_MAX_PER_HAND`
 - 強化のチャンスは4回、枠は6つなので、**`upgrade` で選べる手が0になることはない**
+
+> **`GameState` は判別可能ユニオンではない**ので、型のうえでは
+> 「`phase === 'battle'` なのに `battle === null`」のような不正な組み合わせも表現できる。
+> **上の不変条件を守るのは `application/game.ts` の各関数の責任**であり、
+> 型では保証されない。`tests/scenario/` はここを通しで確認する。
 
 ---
 
@@ -489,7 +535,33 @@ export const BASE_HANDS: HandTable = {
 | 5 | `glicoKing` | グリコ王 | 18 | .30 / .30 / .40 | .40 / .20 / .40 | チョキ ×0.5 | **stareDouble** |
 
 `resistance` は**3手すべてのキーを必ず書く**（等倍は `1`）。
-`hint` は偏りと耐性を1行で書く（例: 「グーを好む」「チョキが効きにくい／にらみが速く溜まる」）。
+
+**公開する形はこれ。** キー名は上の表の `id` と一致させる（`stages.ts` が名前で引くため）。
+
+```ts
+import type { EnemyDef } from '@/domain/enemy';
+
+export const ENEMIES = {
+  scarecrow: { id: 'scarecrow', name: 'かかし', maxHp: 12, /* … */ },
+  rockGuard: { /* … */ },
+  shearBird: { /* … */ },
+  paperEnvoy: { /* … */ },
+  glicoKing: { /* … */ },
+} satisfies Readonly<Record<string, EnemyDef>>;
+```
+
+`satisfies` を使う（`: Record<string, EnemyDef>` と注釈すると、
+`ENEMIES.scarecrow` の型が広がって `stages.ts` 側で不便になる）。
+
+`hint` は**画面にそのまま出す1行**。5体分をここで確定させる。
+
+| id | hint |
+| --- | --- |
+| `scarecrow` | くせがない |
+| `rockGuard` | グーを好む |
+| `shearBird` | チョキを好む |
+| `paperEnvoy` | パーを好む／チョキが効きにくい |
+| `glicoKing` | チョキが効きにくい／にらみが倍で溜まる |
 
 **5体目に「グー耐性 × にらみ+2」を作らない。** にらみが速く溜まるのにグーが半減し、
 主機構が罠になる（`docs/00_research.md` 節9.5）。チョキ耐性にしてある。
@@ -512,6 +584,22 @@ export const STAGES: readonly EnemyDef[] = [
 
 **ここ以外で DOM を触らない。** テストは書かない（`docs/04_test-plan.md`）。
 
+> **`src/ui/` は Codex に出さず、メイン（Opus）が実装してブラウザで確認する。**
+> UI はテストで守られず、正しさの判定に「見て分かるか」が要る。
+> そのため**この節は関数単位の契約までは書かない**（書いても検証手段がない）。
+> `domain` / `data` / `application` は逆に、ここに書いた契約だけで実装できる粒度にしてある。
+
+### `ui/app.ts` の形だけは固定する
+
+```ts
+export function mountApp(root: HTMLElement, rng: Rng): void;
+```
+
+- `GameState` を1つだけ保持する
+- 入力 → `application` の関数 → 返ってきた新しい state に差し替え → `root` を再描画
+- **再描画は毎回 `root` の中身を作り直す。** 差分更新はしない（画面数が4つなので不要）
+- 各 `screens/*.ts` は `(state, actions) => HTMLElement` の形で要素を返し、DOM に自分で挿さない
+
 | ファイル | 責務 |
 | --- | --- |
 | `ui/app.ts` | `GameState` を1つ保持。入力 → `application` の関数 → 新しい state → 再描画 |
@@ -527,7 +615,9 @@ export const STAGES: readonly EnemyDef[] = [
 
 - 現在値を**画面の中央付近に大きく**出す（0 / 1 / 2）
 - **増えた瞬間が分かる**こと（色か大きさの変化。アニメーションは作り込まない）
-- グーのボタンに、いま出したら何ダメージかを出す（`3 + にらみ×2`）
+- グーのボタンに、いま出したら何ダメージかを出す。
+  **`playerHandTable(state).rock` から計算すること**（`damage + stare * stareBonus`）。
+  `3 + にらみ×2` と直書きすると**強化ぶんが表示に乗らない**
 
 ### `src/main.ts`
 

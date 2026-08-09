@@ -43,7 +43,10 @@ src/
 
 レイヤチェッカ（`scripts/check-layers.sh`）が `src/data/` で
 `function` / `=>` / `if (` / `for (` / `switch (` を**禁止**している。
-**リテラルと `import type` と `satisfies` だけで書ける形**にすること。
+
+書いてよいのは**リテラル・`import type`・`satisfies`・他の data からの値 import** まで
+（`stages.ts` が `enemies.ts` の `ENEMIES` を参照するのはこれに当たる）。
+**禁止しているのはロジックであって、値の参照ではない。**
 ヘルパ関数を作りたくなったら、それは `domain/` に置くべきロジック。
 
 ## 主要な状態
@@ -68,7 +71,7 @@ src/
 | `phase` | `'title' \| 'battle' \| 'upgrade' \| 'result'` | 今どの画面か |
 | `stageIndex` | `number` | 何体目か（0 起点） |
 | `upgrades` | `UpgradeCounts` | 手ごとの強化回数。各 0〜2 |
-| `battle` | `BattleState \| null` | 戦闘中のみ非 null |
+| `battle` | `BattleState \| null` | `title` のときだけ `null`。**`upgrade` と `result` でも最後の状態を保持する**（結果画面で最終HPを見せるため） |
 | `lastLog` | `TurnLog \| null` | 直前のターンの内訳（画面表示用） |
 | `cleared` | `boolean` | 結果画面がクリアかゲームオーバーか |
 
