@@ -25,7 +25,8 @@ TypeScript / Vite / Vitest。フレームワークは使わず、素の DOM で�
 | `docs/02_architecture.md` | 基本設計 | 実装前 |
 | `docs/03_detailed-design.md` | 詳細設計 | **実装・テスト作成のたび** |
 | `docs/04_test-plan.md` | テスト計画 | テストを書くとき |
-| `docs/05_assets.md` | 画像素材の発注仕様 | 素材を扱うとき |
+| `docs/05_assets.md` | 画像素材の発注仕様と、不要と判断したもの | 素材を扱うとき |
+| `docs/05_assets-order.md` | 上の**作業用**。作るものとプロンプトだけ | 画像を生成させるとき |
 | `docs/adr/` | 覆せない決定と、その理由 | 決定を蒸し返しそうなとき |
 | **`docs/10_workflow.md`** | **工程・コミット・テスト・素材の手順** | **工程に入るとき、コミットするとき** |
 | **`docs/11_delegation.md`** | **サブエージェント / Codex の運用** | **他のモデルに何かを渡す前に必ず** |
