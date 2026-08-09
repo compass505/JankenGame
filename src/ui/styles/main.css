@@ -2,6 +2,10 @@
   --bg: #14161a;
   --fg: #e8e6e3;
   --accent: #e0b040;
+  --danger: #e05a4f;
+  --success: #5fbf70;
+  --panel: #1f232a;
+  --panel-border: #33394433;
   color-scheme: dark;
 }
 
@@ -19,10 +23,218 @@ body {
   font-family: system-ui, sans-serif;
 }
 
-.placeholder {
+#app {
+  width: 100%;
+  max-width: 480px;
+  padding: 16px;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
   text-align: center;
 }
 
-.placeholder h1 {
+.screen__title {
   color: var(--accent);
+  margin: 0;
+}
+
+.screen--cleared .screen__title {
+  color: var(--success);
+}
+
+.screen--gameover .screen__title {
+  color: var(--danger);
+}
+
+.screen__lead {
+  margin: 0;
+  opacity: 0.85;
+}
+
+.primary-button {
+  padding: 12px 32px;
+  font-size: 1.1rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.primary-button:hover {
+  filter: brightness(1.1);
+}
+
+/* 敵パネル */
+
+.enemy-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.enemy-panel__portrait {
+  width: 240px;
+  height: 240px;
+  object-fit: contain;
+}
+
+.enemy-panel__portrait--boss {
+  width: 260px;
+  height: 260px;
+}
+
+.enemy-panel__name {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.enemy-panel__hint {
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+/* HPバー */
+
+.hp-bar {
+  width: 100%;
+}
+
+.hp-bar__label {
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+  text-align: left;
+}
+
+.hp-bar__track {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: #00000055;
+  overflow: hidden;
+}
+
+.hp-bar__fill {
+  height: 100%;
+  background: var(--success);
+  transition: width 0.2s ease;
+}
+
+/* にらみ */
+
+.stare-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.stare-display__label {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.stare-display__value {
+  font-size: 3rem;
+  font-weight: bold;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.stare-display--pulse .stare-display__value {
+  animation: stare-pulse 0.5s ease;
+  color: var(--danger);
+}
+
+@keyframes stare-pulse {
+  0% {
+    transform: scale(1.6);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 直前の結果 */
+
+.turn-log {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+}
+
+.turn-log__outcome {
+  font-weight: bold;
+}
+
+.turn-log__detail {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  min-height: 1em;
+}
+
+/* 自分パネル */
+
+.player-panel {
+  width: 100%;
+}
+
+/* 手のボタン列 */
+
+.hand-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  justify-content: center;
+}
+
+.hand-button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.hand-button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.hand-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hand-button__icon {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.hand-button__label {
+  font-size: 0.9rem;
+}
+
+.hand-button__damage {
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.hand-button__reason {
+  font-size: 0.75rem;
+  opacity: 0.7;
 }
