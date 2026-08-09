@@ -316,7 +316,8 @@ describe('resolveTurn: 不変条件', () => {
 
   it('1: ダメージがHPを超えても0未満にならない（敵側）', () => {
     const s = state({ playerHp: 15, enemyHp: 2 });
-    const ctx = ctxForcingEnemyHand('rock', {
+    // scissors はpaperに勝つ
+    const ctx = ctxForcingEnemyHand('paper', {
       playerHands: handTable({ scissors: { damage: 100, heal: 0, stareBonus: 0 } }),
     });
 
