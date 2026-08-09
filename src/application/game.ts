@@ -4,11 +4,16 @@ import type { EnemyDef } from '@/domain/enemy';
 import type { Hand } from '@/domain/hand';
 import {
   applyUpgrade,
+  advanceHeat,
+  applyHeat,
   buildHandTable,
   canUpgrade,
+  HEAT_GAIN,
+  HEAT_MAX_PENALTY,
+  NO_HEAT,
   NO_UPGRADES,
 } from '@/domain/handTable';
-import type { HandTable, UpgradeCounts } from '@/domain/handTable';
+import type { HandTable, HeatCounts, UpgradeCounts } from '@/domain/handTable';
 import { BASE_HANDS } from '@/data/hands';
 import { STAGES } from '@/data/stages';
 import type { Rng } from '@/lib/rng';
@@ -22,6 +27,8 @@ export interface GameState {
   readonly battle: BattleState | null;
   readonly lastLog: TurnLog | null;
   readonly cleared: boolean;
+  readonly playerHeat: HeatCounts;
+  readonly enemyHeat: HeatCounts;
 }
 
 export const PLAYER_MAX_HP = 15;
@@ -34,6 +41,8 @@ export function createGame(): GameState {
     battle: null,
     lastLog: null,
     cleared: false,
+    playerHeat: NO_HEAT,
+    enemyHeat: NO_HEAT,
   };
 }
 
@@ -65,22 +74,30 @@ export function playHand(state: GameState, hand: Hand, rng: Rng): GameState {
     return state;
   }
 
+  // 画面に出す表（playerHandTable）と実ダメージの元をずらさないため、同じ関数から取る
+  const playerHands = playerHandTable(state);
+  const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat);
   const result = resolveTurn(
     state.battle,
     hand,
     {
-      playerHands: buildHandTable(BASE_HANDS, state.upgrades),
-      enemyHands: BASE_HANDS,
+      playerHands,
+      enemyHands,
       enemy,
     },
     rng,
   );
+
+  const playerHeat = advanceHeat(state.playerHeat, hand);
+  const enemyHeat = advanceHeat(state.enemyHeat, result.log.enemyHand);
 
   if (result.state.outcome === null) {
     return {
       ...state,
       battle: result.state,
       lastLog: result.log,
+      playerHeat,
+      enemyHeat,
     };
   }
 
@@ -91,6 +108,8 @@ export function playHand(state: GameState, hand: Hand, rng: Rng): GameState {
       battle: result.state,
       lastLog: result.log,
       cleared: false,
+      playerHeat,
+      enemyHeat,
     };
   }
 
@@ -101,6 +120,8 @@ export function playHand(state: GameState, hand: Hand, rng: Rng): GameState {
       battle: result.state,
       lastLog: result.log,
       cleared: true,
+      playerHeat,
+      enemyHeat,
     };
   }
 
@@ -109,6 +130,8 @@ export function playHand(state: GameState, hand: Hand, rng: Rng): GameState {
     phase: 'upgrade',
     battle: result.state,
     lastLog: result.log,
+    playerHeat,
+    enemyHeat,
   };
 }
 
@@ -129,6 +152,8 @@ export function chooseUpgrade(state: GameState, hand: Hand): GameState {
     upgrades: applyUpgrade(state.upgrades, hand),
     battle: createBattle(PLAYER_MAX_HP, enemy),
     lastLog: null,
+    playerHeat: NO_HEAT,
+    enemyHeat: NO_HEAT,
   };
 }
 
@@ -141,5 +166,13 @@ export function currentEnemy(state: GameState): EnemyDef | null {
 }
 
 export function playerHandTable(state: GameState): HandTable {
-  return buildHandTable(BASE_HANDS, state.upgrades);
+  return applyHeat(buildHandTable(BASE_HANDS, state.upgrades), state.playerHeat);
+}
+
+export function heatPenalties(state: GameState): Readonly<Record<Hand, number>> {
+  return {
+    rock: Math.min(HEAT_MAX_PENALTY, Math.floor(state.playerHeat.rock / HEAT_GAIN)),
+    scissors: Math.min(HEAT_MAX_PENALTY, Math.floor(state.playerHeat.scissors / HEAT_GAIN)),
+    paper: Math.min(HEAT_MAX_PENALTY, Math.floor(state.playerHeat.paper / HEAT_GAIN)),
+  };
 }
