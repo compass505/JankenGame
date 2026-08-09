@@ -9,6 +9,8 @@ const HAND_LABEL: Readonly<Record<Hand, string>> = {
 export interface HandButtonOptions {
   readonly hand: Hand;
   readonly damagePreview?: number;
+  /** 熱による弱化量（0〜HEAT_MAX_PENALTY）。0 なら何も出さない */
+  readonly heatPenalty?: number;
   readonly disabled?: boolean;
   readonly disabledReason?: string;
   readonly onClick: () => void;
@@ -31,11 +33,24 @@ export function renderHandButton(options: HandButtonOptions): HTMLElement {
   label.textContent = HAND_LABEL[options.hand];
   button.appendChild(label);
 
+  const heatPenalty = options.heatPenalty ?? 0;
+
   if (options.damagePreview !== undefined) {
     const damage = document.createElement('div');
     damage.className = 'hand-button__damage';
     damage.textContent = `${options.damagePreview} ダメージ`;
     button.appendChild(damage);
+  }
+
+  // 熱で弱っていることが一目で分かるようにする。深いほど強く見せる（docs/03 節7）
+  if (heatPenalty > 0) {
+    button.classList.add('hand-button--heated');
+
+    const heat = document.createElement('div');
+    heat.className = 'hand-button__heat';
+    heat.dataset['level'] = String(heatPenalty);
+    heat.textContent = `-${heatPenalty} 熱`;
+    button.appendChild(heat);
   }
 
   if (options.disabled && options.disabledReason !== undefined) {

@@ -238,3 +238,39 @@ body {
   font-size: 0.75rem;
   opacity: 0.7;
 }
+
+/* 熱で弱っている手。数字が下がった理由が分かるようにする */
+.hand-button--heated,
+.hand-button--heated:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+.hand-button--heated .hand-button__icon {
+  opacity: 0.55;
+}
+
+.hand-button--heated .hand-button__damage {
+  color: var(--danger);
+}
+
+.hand-button__heat {
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--danger);
+  background: #e05a4f22;
+}
+
+/* 弱化が深いほど強く見せる */
+.hand-button__heat[data-level='2'] {
+  color: var(--bg);
+  background: var(--danger);
+}
+
+.hand-button__heat[data-level='3'] {
+  color: var(--bg);
+  background: var(--danger);
+  box-shadow: 0 0 0 2px #e05a4f66;
+}

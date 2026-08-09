@@ -1,4 +1,4 @@
-import { currentEnemy, playerHandTable } from '@/application/game';
+import { currentEnemy, heatPenalties, playerHandTable } from '@/application/game';
 import type { GameState } from '@/application/game';
 import { HANDS } from '@/domain/hand';
 import type { Outcome } from '@/domain/hand';
@@ -81,6 +81,7 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
   el.appendChild(playerPanel);
 
   const hands = playerHandTable(state);
+  const penalties = heatPenalties(state);
   const handRow = document.createElement('div');
   handRow.className = 'hand-row';
 
@@ -91,6 +92,7 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
       renderHandButton({
         hand,
         damagePreview,
+        heatPenalty: penalties[hand],
         onClick: () => {
           actions.onPlayHand(hand);
         },
