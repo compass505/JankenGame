@@ -50,4 +50,35 @@ E2E フレームワークは導入しない（3日の規模に対して重い）
 
 ## これから書く
 
-<!-- /design 完了後に列挙する -->
+設計は `docs/03_detailed-design.md`。**期待値の根拠は必ずそこに書かれているものを使う。**
+自分で新しく仕様を決めない。
+
+### `tests/unit/`
+
+| ファイル | 検証するもの |
+| --- | --- |
+| `hand.test.ts` | `judge` の9通り。`judge(a,a)==='draw'`、勝敗の対称性 |
+| `handTable.test.ts` | `canUpgrade` の上限、`applyUpgrade` が上限で据え置き、`buildHandTable` が **damage にだけ**加算し `heal` を動かさない |
+| `enemy.test.ts` | `enemyPhase` の境界（`hp*2 === maxHp` は `desperate`）、`handProbabilities` の**和が1**と**全手 0.1 以上**、`decideEnemyHand` が `rng.next()` を**ちょうど1回**呼ぶ |
+| `battle.test.ts` | 節4の不変条件1〜8と、具体例1〜5をそのまま |
+
+**`battle.test.ts` が本体。** 特にこの3つは落とさない。
+
+- **決着したターンで `playerHp + enemyHp` が必ず1以上減る**（終了保証）
+- **耐性0.5のパーで回復がダメージを上回らない**（例3。ここが壊れると戦闘が終わらない）
+- **同時に0以下ならプレイヤーの敗北**（例5。引き分けを作らない）
+
+### `tests/scenario/`
+
+`docs/04_test-plan.md` の方針どおり**3本まで**。`application/game.ts` を通す。
+固定シードで回し、**決着時の状態だけ**を見る。途中の数値は見ない。
+
+1. プレイヤーが勝つまでの1周 — 5体倒して `phase === 'result'` かつ `cleared === true`
+2. プレイヤーが負ける1試合 — `cleared === false`、`playerHp === 0`、HPが負になっていない
+3. **あいこが連続しても進行する** — ターン上限（例: 200）を置いて回し、
+   **上限に達する前に必ず決着すること**。にらみが `STARE_MAX` を超えないこと
+
+### 書かないもの
+
+- `src/ui/` のテスト（方針どおり）
+- `src/data/` の数値そのものを検証するテスト（`/balance` で壊れるため）
