@@ -6,7 +6,7 @@
 
 | 層 | 置き場所 | 検証するもの | 自動化 |
 | --- | --- | --- | --- |
-| ユニット | `tests/unit/` | `domain/` の純粋関数、`lib/` | vitest |
+| ユニット | `tests/unit/` | `domain/` の純粋関数、`lib/`、**`application/` の配線のうちシナリオでは見えないもの** | vitest |
 | **シナリオ** | `tests/scenario/` | `domain` + `application` を通した戦闘1試合 | vitest |
 | ブラウザ確認 | 手動 | UI を含めた画面遷移・表示・操作 | なし |
 
@@ -56,10 +56,11 @@ E2E フレームワークは導入しない（3日の規模に対して重い）
 | ファイル | 行数 | 中身 |
 | --- | --- | --- |
 | `tests/unit/hand.test.ts` | 75 | `judge` の9通り、`HANDS` の順序、対称性、勝敗の分布 |
-| `tests/unit/handTable.test.ts` | 129 | 強化の上限、`buildHandTable` が damage にだけ加算すること |
+| `tests/unit/handTable.test.ts` | 263 | 強化の上限、`buildHandTable` が damage にだけ加算すること、**熱**（下の節） |
 | `tests/unit/enemy.test.ts` | 225 | フェーズ境界、確率の和と下限、`rng` の呼び出し回数 |
-| `tests/unit/battle.test.ts` | 496 | **本体**。手順0、具体例1〜5、あいこ、定数、不変条件1〜8、再現性 |
-| `tests/scenario/game.test.ts` | 156 | シナリオ3本 |
+| `tests/unit/battle.test.ts` | 497 | **本体**。手順0、具体例1〜5、あいこ、定数、不変条件1〜8、再現性 |
+| `tests/unit/game.test.ts` | 182 | **熱の配線のみ**（`application/game.ts`）。下の節 |
+| `tests/scenario/game.test.ts` | 167 | シナリオ3本 |
 
 ### テストの前提として置いたこと（実装側が守るもの）
 
@@ -111,6 +112,15 @@ E2E フレームワークは導入しない（3日の規模に対して重い）
 
 ## 熱の追加ぶん（2026-08-10・`docs/adr/0002-hand-heat.md`）
 
+> ステータス: **書き終えた**（`/test`・2026-08-10）。実装は `/impl` 待ち。
+
+| ファイル | 中身 |
+| --- | --- |
+| `tests/unit/handTable.test.ts` | **追記**。`applyHeat` / `advanceHeat` / 定数（下の表） |
+| `tests/unit/game.test.ts` | **新規**。`application/game.ts` の熱の配線（節5）。下の「配線のテスト」 |
+
+### `domain/handTable.ts` のぶん
+
 `tests/unit/handTable.test.ts` に追記する。**新しいファイルは作らない**（同じモジュールなので）。
 
 | 検証するもの | 根拠 |
@@ -122,6 +132,28 @@ E2E フレームワークは導入しない（3日の規模に対して重い）
 | 弱化量が `HEAT_MAX_PENALTY` で頭打ち（熱40でも3段） | 節2.5 |
 | `advanceHeat` が**先に全部1冷ましてから**出した手に加算する | 節2.5。`{scissors:4}` に `'rock'` を出すと `{rock:4, scissors:3}` |
 | `advanceHeat` が引数を書き換えず新しいオブジェクトを返す | 節2.5 |
+
+### `application/game.ts` の配線のテスト（`tests/unit/game.test.ts`）
+
+**シナリオテストは決着時の状態しか見ないので、熱の配線は素通りしてしまう。**
+「戦闘ごとにリセットし忘れた」「敵側の熱を進め忘れた」は、それでも1周クリアできてしまうため
+シナリオ3本のどれも落ちない。熱の実装の大半は `application` 側（`docs/03` 節5）にあるので、
+**ここだけを対象にしたユニットテストを1本足した。**
+
+| 検証するもの | 根拠（`docs/03` 節5） |
+| --- | --- |
+| `startGame` 直後は両方の熱が `NO_HEAT` | 各関数の表・不変条件 |
+| `playHand` 後の熱が `advanceHeat(前, 出した手)` と一致（**敵側も**） | 「熱の更新」 |
+| **あいこのターンでも熱が進む** | 「あいこのターンも更新する」 |
+| `chooseUpgrade` 直後は両方 `NO_HEAT` に戻る | 各関数の表 |
+| `heatPenalties` が 0〜`HEAT_MAX_PENALTY` に収まる | 「表示用」の関数表 |
+| `playerHandTable` に熱が乗る（`heal`・`stareBonus` は動かない） | 「`ctx` の組み立て」 |
+
+**phase遷移・強化・クリア判定はここでは見ない**（`tests/scenario/` の担当）。重複させない。
+
+**敵の手は `state.lastLog.enemyHand` から取る。** 乱数の実装詳細に期待値を依存させないため。
+`playerHandTable` は「前の `damage` から1下がる」形で検証しており、
+**`src/data/hands.ts` の数値は1つも焼き込んでいない**（`/balance` で動かしても壊れない）。
 
 ### シナリオテストは増やさない
 
