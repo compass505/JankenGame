@@ -327,6 +327,13 @@ export interface BattleContext {
 
 export function createBattle(playerMaxHp: number, enemy: EnemyDef): BattleState;
 
+/**
+ * 勝った側が実際に与えるダメージ。
+ * 耐性は `damage` にだけ掛かり、**にらみのぶんには掛からない**。
+ * 耐性を持たない側（プレイヤーが受ける側）は `resistance` に 1 を渡す。
+ */
+export function dealtDamage(value: HandValue, resistance: number, stare: number): number;
+
 export function resolveTurn(
   state: BattleState,
   playerHand: Hand,
@@ -388,20 +395,32 @@ outcome === 'draw':
 
 ```
 プレイヤーが勝った場合（v = ctx.playerHands[playerHand]、耐性は敵が持つ）
-    base   = Math.max(1, Math.floor(v.damage * ctx.enemy.resistance[playerHand]))
-    dealt  = base + state.stare * v.stareBonus
+    dealt  = dealtDamage(v, ctx.enemy.resistance[playerHand], state.stare)
     damageToEnemy  = dealt
     healToPlayer   = Math.max(0, Math.min(v.heal, dealt - 1, state.playerMaxHp - state.playerHp))
     damageToPlayer = 0, healToEnemy = 0
 
 敵が勝った場合（v = ctx.enemyHands[enemyHand]、プレイヤーは耐性を持たない）
-    dealt  = v.damage + state.stare * v.stareBonus
+    dealt  = dealtDamage(v, 1, state.stare)
     damageToPlayer = dealt
     healToEnemy    = Math.max(0, Math.min(v.heal, dealt - 1, state.enemyMaxHp - state.enemyHp))
     damageToEnemy  = 0, healToPlayer = 0
 ```
 
-**`clamp` のような自作ヘルパを作らない。** `Math.max` / `Math.min` / `Math.floor` を直接書く。
+`dealtDamage` の中身はこれだけ。
+
+```
+Math.max(1, Math.floor(value.damage * resistance)) + stare * value.stareBonus
+```
+
+**`clamp` のような汎用ヘルパは作らない。** `Math.max` / `Math.min` / `Math.floor` を直接書く。
+
+> **`dealtDamage` だけを関数に切り出す理由。** ここは**画面にも出る値**であり、
+> `resolveTurn` と UI が同じ式を別々に持っていた結果、
+> **耐性0.5の敵に対してボタンが「6ダメージ」と表示して実際は3しか入らない**状態になっていた
+> （2026-08-10・実測で 4,523 ターン中 426 件のずれを検出）。
+> 式が2箇所にあると必ずずれるので、**唯一の出どころをここに置く。**
+> `application` の `damagePreview` もこの関数を通す（節5）。
 
 > **`dealt - 1` を必ず挟むこと。** これが**戦闘の終了保証**そのもの。
 > パーは「4ダメージ＋3回復」なので通常は `min(3, 3)` で 3 のまま変わらないが、
@@ -548,6 +567,26 @@ export function currentEnemy(state: GameState): EnemyDef | null;
 export function playerHandTable(state: GameState): HandTable;
 /** 表示用。熱による弱化量（0〜HEAT_MAX_PENALTY）。UI が「-1」等を出すのに使う */
 export function heatPenalties(state: GameState): Readonly<Record<Hand, number>>;
+
+/**
+ * 表示用。その手をいま出して**勝ったとき**に実際に与えるダメージ。
+ * 強化・熱・**耐性**・にらみをすべて含む。**必ず `dealtDamage` を通すこと**（節4）。
+ * 戦闘中でなければ 0。
+ */
+export function damagePreview(state: GameState, hand: Hand): number;
+
+/**
+ * 表示用。敵がいま各手を出す確率と、その手で**敵が勝ったとき**にこちらが受けるダメージ。
+ * 確率は現在のフェーズ（`normal` / `desperate`）のもの。敵の熱も反映する。
+ * 戦闘中でなければ null。
+ */
+export function enemyForecast(state: GameState): EnemyForecast | null;
+
+export interface EnemyForecast {
+  readonly phase: EnemyPhase;
+  readonly probability: Readonly<Record<Hand, number>>;
+  readonly damage: Readonly<Record<Hand, number>>;
+}
 ```
 
 ### 各関数の挙動
@@ -746,7 +785,7 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 | --- | --- |
 | `ui/app.ts` | `GameState` を1つ保持。入力 → `application` の関数 → 新しい state → 再描画 |
 | `ui/screens/title.ts` | タイトルと「はじめる」 |
-| `ui/screens/battle.ts` | 敵・双方のHP・**にらみ**・敵のヒント・直前の結果・3ボタン |
+| `ui/screens/battle.ts` | 敵・双方のHP・**にらみ**・**敵の手の確率と威力**・**直前の手合わせ**・3ボタン |
 | `ui/screens/upgrade.ts` | 3択。上限の手は `disabled` で**表示は残す** |
 | `ui/screens/result.ts` | クリア / ゲームオーバー、タイトルへ戻る |
 | `ui/components/` | HPバー、にらみ表示、手のボタン |
@@ -757,9 +796,49 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 
 - 現在値を**画面の中央付近に大きく**出す（0 / 1 / 2）
 - **増えた瞬間が分かる**こと（色か大きさの変化。アニメーションは作り込まない）
-- グーのボタンに、いま出したら何ダメージかを出す。
-  **`playerHandTable(state).rock` から計算すること**（`damage + stare * stareBonus`）。
-  `3 + にらみ×3` と直書きすると**強化ぶんも熱ぶんも表示に乗らない**
+- 各ボタンに、いま出して勝ったら何ダメージかを出す。
+  **必ず `damagePreview(state, hand)` を使うこと**（節5）。
+  自分で `damage + stare * stareBonus` と組み立てると**耐性が抜ける。**
+  `3 + にらみ×3` と直書きすると**強化ぶんも熱ぶんも乗らない**
+
+### 読み合いの材料を数字で出す（2026-08-10 追加）
+
+**情報が足りないと、プレイヤーは運ゲーを強いられていると感じる。**
+`hint` の一行（「グーを好む」）では、どれくらい好むのかも、外したら何が起きるのかも分からない。
+`docs/01_requirements.md` は敵の偏りを**公開情報**と定めているので、数字で出す。
+
+敵パネルに**3手ぶんの行**を出す。`enemyForecast(state)` の値をそのまま使う。
+
+| 列 | 中身 | なぜ要るか |
+| --- | --- | --- |
+| 手 | グー / チョキ / パー のアイコン | — |
+| 敵が出す確率 | `52%` のような整数％とバー | **読み合いの土台。これが無いと勘になる** |
+| 受けるダメージ | その手で敵が勝ったときにこちらが受ける値 | 「負けたらどれだけ痛いか」で手を選べる |
+| こちらの耐性表示 | `×0.5` は**プレイヤーのボタン側**に出す | 与ダメージに効くものは与ダメージの隣に置く |
+
+- 確率は**現在のフェーズのもの**。`desperate` に入ったら値が変わるので、
+  **フェーズが変わったことが分かる**ようにする（見出しの色か文言）
+- **敵の熱は数値としては出さない**が、「受けるダメージ」には反映される
+  （`enemyForecast` が熱を適用した値を返す）。**画面に出る数字は必ず実値**にする
+- `hint` の一行は残す。数字と併記して読み方の助けにする
+
+### 直前の手合わせを見せる（2026-08-10 追加）
+
+**何が起きたのか分からないと、勝ち負けが理不尽に見える。**
+文章だけでなく、**両者の手を並べて出す。**
+
+- 自分の手と敵の手を**アイコンで左右に並べ**、中央に勝敗を出す
+- 出た瞬間に動く（`transform` と `opacity` の短いアニメーション）。
+  **凝った演出は作らない。** 何が出たかが分かることが目的
+- ダメージは**受けた側の数字が動いたことが分かる**ように出す（HPバーの変化＋数字のポップ）
+
+### 迫力（2026-08-10 追加）
+
+- 戦闘画面に背景を敷く。**`public/assets/battle-bg.png` が入るまでは CSS で代替する**
+  （`docs/05_assets.md`・`docs/10_workflow.md`「素材待ちで実装を止めない」）
+- 敵は**待機の微動**と**被弾の反応**を持つ。CSS アニメーションだけで作る
+- **`docs/00_research.md` 節9.8 の制約は守る。** 背景も演出も
+  **画面中央のにらみの表示を邪魔しない**
 
 ### 熱が見えること（`docs/adr/0002-hand-heat.md`）
 
