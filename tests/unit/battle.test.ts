@@ -44,6 +44,8 @@ function enemyDef(overrides: Partial<EnemyDef> = {}): EnemyDef {
     weightsNormal: { rock: 1, scissors: 1, paper: 1 },
     weightsDesperate: { rock: 1, scissors: 1, paper: 1 },
     resistance: { rock: 1, scissors: 1, paper: 1 },
+    // resolveTurn は本気の強化を知らない（application が enemyHands に織り込む。docs/03 節5）
+    desperateBonus: 0,
     drawRule: 'standard',
     hint: 'テスト用',
     ...overrides,

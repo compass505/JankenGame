@@ -579,7 +579,8 @@ export interface GameState {
   readonly battle: BattleState | null;
   readonly lastLog: TurnLog | null;
   readonly cleared: boolean;
-  /** 手の熱。戦闘ごとに 0 に戻す（`docs/adr/0002-hand-heat.md`） */
+  /** 直近に出した手の履歴。戦闘ごとに `NO_HEAT`（空）に戻す
+   *  （`docs/adr/0003-repetition-window.md`。「溜まって冷める数値」ではない） */
   readonly playerHeat: HeatCounts;
   readonly enemyHeat: HeatCounts;
 }
@@ -1014,6 +1015,12 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 - 弱化量が深いほど強く見せる（`-1` / `-2` / `-3`）
 - **敵側の弱化は数値としては出さなくてよい。** ただし `enemyForecast` の
   「負けたら -N」には反映される（画面に出る数字は必ず実値）
+
+> **`heatRecoveryPreview` は消す。** ADR 0002 の「溜まった熱があと何ターンで冷めるか」を
+> 出すための関数で、**ADR 0003 には冷めるという状態が無い**（履歴が窓から出ていくだけ）。
+> 窓方式では罰は 3連続からしか付かず最大 -2 で、**散らせば次のターンには消える**ので、
+> 「あと何ターン」を出す意味がない。`src/application/game.ts` から関数を、
+> `src/ui/screens/battle.ts` と `src/ui/components/handButton.ts` から表示を落とす。
 
 ### `src/main.ts`
 

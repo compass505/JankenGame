@@ -1,6 +1,8 @@
 # テスト計画
 
-> ステータス: **実装済み** — 全モジュールのテストが緑（102件）
+> ステータス: **ADR 0003 のぶんは実装待ち** — 130件のうち 27件が落ちている（`/test` 直後の正しい状態）。
+> 落ちているのは**すべて ADR 0003 で作り替えた項目**で、`src/` 側は改訂前の設計のまま一貫している。
+> 詳しくは末尾の「連打の窓への作り替え」。それ以前のぶんは緑。
 
 ## 3層の方針
 
@@ -54,10 +56,10 @@ E2E フレームワークは導入しない（3日の規模に対して重い）
 | ファイル | 行数 | 中身 |
 | --- | --- | --- |
 | `tests/unit/hand.test.ts` | 75 | `judge` の9通り、`HANDS` の順序、対称性、勝敗の分布 |
-| `tests/unit/handTable.test.ts` | 263 | 強化の上限、`buildHandTable` が damage にだけ加算すること、**熱**（下の節） |
-| `tests/unit/enemy.test.ts` | 225 | フェーズ境界、確率の和と下限、`rng` の呼び出し回数 |
-| `tests/unit/battle.test.ts` | 497 | **本体**。手順0、具体例1〜5、あいこ、定数、不変条件1〜8、再現性 |
-| `tests/unit/game.test.ts` | 182 | **熱の配線のみ**（`application/game.ts`）。下の節 |
+| `tests/unit/handTable.test.ts` | 370 | 強化の上限、`buildHandTableWith` の行き先、**連打の窓**（下の節） |
+| `tests/unit/enemy.test.ts` | 227 | フェーズ境界、確率の和と下限、`rng` の呼び出し回数 |
+| `tests/unit/battle.test.ts` | 579 | **本体**。手順0、具体例1〜5、あいこ、定数、不変条件1〜8、再現性 |
+| `tests/unit/game.test.ts` | 712 | `application/game.ts` の配線と表示用の関数。下の節 |
 | `tests/scenario/game.test.ts` | 167 | シナリオ3本 |
 
 ### テストの前提として置いたこと（実装側が守るもの）
@@ -78,7 +80,7 @@ E2E フレームワークは導入しない（3日の規模に対して重い）
 | ファイル | 検証するもの |
 | --- | --- |
 | `hand.test.ts` | `judge` の9通り。`judge(a,a)==='draw'`、勝敗の対称性 |
-| `handTable.test.ts` | `canUpgrade` の上限、`applyUpgrade` が上限で据え置き、`buildHandTable` が **damage にだけ**加算し `heal` を動かさない |
+| `handTable.test.ts` | `canUpgrade` の上限、`applyUpgrade` が上限で据え置き、`buildHandTableWith` が **`targets` の指す側にだけ**加算し `heal` を動かさない |
 | `enemy.test.ts` | `enemyPhase` の境界（`hp*2 === maxHp` は `desperate`）、`handProbabilities` の**和が1**と**全手 0.1 以上**、`decideEnemyHand` が `rng.next()` を**ちょうど1回**呼ぶ |
 | `battle.test.ts` | 節4の不変条件1〜8と、具体例1〜5をそのまま |
 
@@ -110,7 +112,10 @@ E2E フレームワークは導入しない（3日の規模に対して重い）
 
 ## 熱の追加ぶん（2026-08-10・`docs/adr/0002-hand-heat.md`）
 
-> ステータス: **完了**（`/test` → `/impl`・2026-08-10）。`npm run check` 緑（102件）。
+> ステータス: **この節の中身は ADR 0003 に置き換わった。** 下の「連打の窓への作り替え」を読むこと。
+> **記録として残してある**（何をどう縛っていたかが、作り替えの差分を読むときに要る）。
+> 「熱の効き方はローカルなフィクスチャで渡す」「`domain/battle.ts` のテストは変えない」という
+> **方針の部分は今も生きている。** 期待値の表だけが無効になった。
 
 | ファイル | 中身 |
 | --- | --- |
@@ -173,3 +178,57 @@ E2E フレームワークは導入しない（3日の規模に対して重い）
 
 グーの `stareBonus` 3・チョキの `damage` 5 は `src/data/hands.ts` の値であり、
 **方針どおりテストでは検証しない**（`/balance` で動かせる状態を保つ）。
+
+## 連打の窓への作り替え（2026-08-10・`docs/adr/0003-repetition-window.md`）
+
+> ステータス: **`/test` 完了・`/impl` 待ち。** 130件中 27件が落ちている（この工程の正しい状態）。
+> 落ちているものは**すべて ADR 0003 で作り替えた項目**で、`src/` 側には型エラーが1つも無い。
+
+熱が「溜まって冷める数値」から「**直近4手の履歴**」になり、あわせて
+強化の行き先が手ごとに変わり、本気モードに攻撃強化が付いた。
+**追加ではなく既存の型とシグネチャの作り替え**なので、テストは追記ではなく改訂になった。
+
+| ファイル | やったこと |
+| --- | --- |
+| `tests/unit/handTable.test.ts` | **全面改訂**。`buildHandTableWith` と窓方式の連打の罰 |
+| `tests/unit/game.test.ts` | **全面改訂**。履歴の配線、本気強化、`upgradePreview` の行き先、`handOutlook` |
+| `tests/unit/battle.test.ts` / `enemy.test.ts` | **フィクスチャに `desperateBonus` を足しただけ。** 検証は1本も変えていない |
+| `tests/scenario/game.test.ts` | **変更なし**（方針どおり3本のまま） |
+
+### 中心は「具体例の表」（`tests/unit/handTable.test.ts`）
+
+`docs/03` 節2.5 の表を、**出し方1列につき `it` 1本**にした。
+ADR 0003 の狙い（**均等回しと2連続は罰なし、3連続から罰**）がそのままテストの名前になっている。
+どれが落ちたかが名前で分かるので、`/impl` の切り分けが速い。
+
+| 出し方 | 期待する弱化の列 |
+| --- | --- |
+| 均等に回す グチパグチパグ | `0 0 0 0 0 0 0` |
+| 2連続を挟む ググチパググチ | `0 0 0 0 0 0 0` |
+| 3連続 グググチパグ | `0 0 1 0 0 0` |
+| 同じ手だけ（6手） | `0 0 1 2 2 2` |
+| 2手交互 グチグチグチ | `0 0 0 0 0 0` |
+
+**`maxPenalty` は別のローカル `rule` で確かめている。** `window:4 / allowed:2` では
+弱化が最大2までしか届かず `maxPenalty:3` が効かないため（ADR 0003 に明記）、
+`{ window: 10, allowed: 0, maxPenalty: 2 }` で頭打ちだけを見るテストを1本立てた。
+
+### 新しく縛ったもの（`tests/unit/game.test.ts`）
+
+| 検証するもの | 根拠 | なぜ要るか |
+| --- | --- | --- |
+| `desperate` の `enemyForecast.damage` が `normal` より `desperateBonus` だけ大きい | 節5「敵の手の表」 | **`ctx` と `enemyForecast` の両方が同じ表を通ること。** 片方だけに掛けると「負けたら -N」が嘘になる |
+| `desperate` で負けたターンの `damageToPlayer` が直前の `enemyForecast.damage` と一致 | 同上 | 上を**実ダメージ側から**もう一度縛る |
+| `upgradePreview` の `next` は `UPGRADE_TARGETS[hand]` が指す側だけ +1 | 節2・節5 | 強化の行き先が手ごとに変わった。**「グーは stareBonus」とは書かない**（`UPGRADE_TARGETS` を見る） |
+| `handOutlook.heatCost` が、その手を出した直後の `damage` の低下量と一致 | 節5 | ボタンの「使うと次から -N」が実値であること |
+
+**`heatCost` のテストは同じ手を出し続ける。** 3手を巡回させると窓の中の回数が
+`allowed` を超えず `heatCost` が常に 0 になり、**0 と 0 を比べるだけのテスト**になる。
+連打して `heatCost > 0` の局面を通ったことを、テスト自身が最後に確認している。
+
+### `src/data/` の値は1つも焼き込んでいない
+
+`BASE_HANDS` すら import していない。**`startGame` 直後の `playerHandTable` が
+素の `BASE_HANDS` に等しい**ことを使って基準表を取り、そこからの差分だけを見る。
+`desperateBonus` も `currentEnemy(state).desperateBonus` から期待値を作っている。
+`/balance` でどの数値を動かしても、この2ファイルは壊れない。

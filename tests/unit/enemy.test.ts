@@ -14,6 +14,8 @@ function makeEnemy(overrides: Partial<EnemyDef> = {}): EnemyDef {
     weightsNormal: { rock: 1, scissors: 1, paper: 1 },
     weightsDesperate: { rock: 1, scissors: 1, paper: 1 },
     resistance: { rock: 1, scissors: 1, paper: 1 },
+    // 本気の攻撃強化は application が掛ける（docs/03 節5）。domain 側は値を持つだけ
+    desperateBonus: 0,
     drawRule: 'standard',
     hint: 'テスト用',
     ...overrides,

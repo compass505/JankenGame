@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   chooseUpgrade,
   createGame,
+  currentEnemy,
   damagePreview,
   enemyForecast,
+  handOutlook,
   heatPenalties,
   playHand,
   playerHandTable,
@@ -18,19 +20,27 @@ import {
   NO_HEAT,
   UPGRADE_MAX_PER_HAND,
   advanceHeat,
+  applyHeat,
   applyUpgrade,
+  buildHandTableWith,
   canUpgrade,
+  heatPenalty,
 } from '@/domain/handTable';
+import type { HeatCounts } from '@/domain/handTable';
 import { HEAT_RULE } from '@/data/heat';
+import { UPGRADE_TARGETS } from '@/data/hands';
 import { STAGES } from '@/data/stages';
 import { createRng } from '@/lib/rng';
 
 /**
- * `application/game.ts` の「熱の配線」だけを対象にしたテスト。
+ * `application/game.ts` の「配線」だけを対象にしたテスト。
  * `docs/03_detailed-design.md` 節5（`GameState` の形、各関数の表、
- * 「`ctx` の組み立て」「熱の更新」「不変条件」）が根拠。
+ * 「`ctx` の組み立て」「敵の手の表」「履歴の更新」「不変条件」）が根拠。
  *
- * phase遷移・強化・クリア判定などの他の挙動は `tests/scenario/game.test.ts` が
+ * `docs/adr/0003-repetition-window.md` で連打の罰が「熱（Record<Hand,number>）」から
+ * 「直近の履歴（readonly Hand[]）」に変わったので、それに合わせて全面改訂した。
+ *
+ * phase遷移・強化の進行・クリア判定などは `tests/scenario/game.test.ts` が
  * 既に見ているので、ここでは重複して書かない。
  */
 
@@ -130,8 +140,8 @@ describe('chooseUpgrade と熱のリセット', () => {
     ).not.toBeNull();
     if (upgradeState === null) return;
 
-    // リセットの検証として意味を持たせるため、直前の熱が0でないことを確認しておく
-    // （戦闘中に手を出している以上、最後に出した手の熱は必ず rule.gain 分たまっている）
+    // リセットの検証として意味を持たせるため、直前の履歴が空でないことを確認しておく
+    // （戦闘中に手を出している以上、履歴には少なくとも1手残っているはず）
     expect(upgradeState.playerHeat).not.toEqual(NO_HEAT);
 
     // 上限に達している手は無いはず（1回目の強化なので upgrades は NO_UPGRADES）
@@ -147,6 +157,20 @@ describe('heatPenalties', () => {
     const state = startGame(createGame());
 
     expect(heatPenalties(state)).toEqual({ rock: 0, scissors: 0, paper: 0 });
+  });
+
+  it('heatPenalties(state)[hand] は heatPenalty(state.playerHeat, hand, HEAT_RULE) と一致する', () => {
+    let state = startGame(createGame());
+    const rng = createRng(3);
+
+    for (let i = 0; i < 20 && state.phase === 'battle'; i += 1) {
+      state = playHand(state, pickHand(i), rng);
+
+      const penalties = heatPenalties(state);
+      for (const hand of HANDS) {
+        expect(penalties[hand]).toBe(heatPenalty(state.playerHeat, hand, HEAT_RULE));
+      }
+    }
   });
 
   it('不変条件: どの局面でも各手の弱化量は 0 以上 rule.maxPenalty 以下', () => {
@@ -166,30 +190,38 @@ describe('heatPenalties', () => {
 });
 
 describe('playerHandTable と熱', () => {
-  it('rock を1回出すと、rock の damage が1下がる（heal と stareBonus は動かない）', () => {
-    const before = startGame(createGame());
-    const beforeTable = playerHandTable(before);
+  it('連打の履歴があると damage が下がる（heal と stareBonus は動かない）', () => {
+    // rng を介さず、履歴だけを直接組み立てた決定的なテスト。
+    // window-1 個ぶん同じ手で埋めれば、rule によらず必ず allowed を超える。
+    const base = startGame(createGame());
+    const zeroTable = playerHandTable(base);
 
-    const rng = createRng(5);
-    const after = playHand(before, 'rock', rng);
-    const afterTable = playerHandTable(after);
+    const heavyHistory: HeatCounts = new Array(HEAT_RULE.window - 1).fill('rock') as Hand[];
+    const state: GameState = { ...base, playerHeat: heavyHistory };
 
-    // 1回使うと熱が rule.gain になり弱化1段。src/data/ の数値には依存しない
-    expect(afterTable.rock.damage).toBe(Math.max(1, beforeTable.rock.damage - 1));
-    expect(afterTable.rock.heal).toBe(beforeTable.rock.heal);
-    expect(afterTable.rock.stareBonus).toBe(beforeTable.rock.stareBonus);
+    const table = playerHandTable(state);
+
+    expect(table.rock.damage).toBeLessThan(zeroTable.rock.damage);
+    expect(table.rock.heal).toBe(zeroTable.rock.heal);
+    expect(table.rock.stareBonus).toBe(zeroTable.rock.stareBonus);
+    // 出していない手は変化しない
+    expect(table.scissors).toEqual(zeroTable.scissors);
+    expect(table.paper).toEqual(zeroTable.paper);
   });
 
-  it('出していない手（scissors・paper）は playerHandTable が変化しない', () => {
-    const before = startGame(createGame());
-    const beforeTable = playerHandTable(before);
+  it('playerHandTable は buildHandTableWith → applyHeat の合成と一致する（節5「ctx の組み立て」）', () => {
+    // startGame 直後（upgrades=NO_UPGRADES, heat=NO_HEAT）の playerHandTable が
+    // 「素の BASE_HANDS」に等しいことを利用し、src/data/hands.ts の値を直接 import しない。
+    const zero = startGame(createGame());
+    const baseTable = playerHandTable(zero);
 
-    const rng = createRng(5);
-    const after = playHand(before, 'rock', rng);
-    const afterTable = playerHandTable(after);
+    const upgrades = applyUpgrade(applyUpgrade(zero.upgrades, 'scissors'), 'paper');
+    const history: HeatCounts = ['rock', 'rock', 'paper'];
+    const state: GameState = { ...zero, upgrades, playerHeat: history };
 
-    expect(afterTable.scissors).toEqual(beforeTable.scissors);
-    expect(afterTable.paper).toEqual(beforeTable.paper);
+    const expected = applyHeat(buildHandTableWith(baseTable, upgrades, UPGRADE_TARGETS), history, HEAT_RULE);
+
+    expect(playerHandTable(state)).toEqual(expected);
   });
 });
 
@@ -414,21 +446,120 @@ describe('enemyForecast', () => {
   });
 });
 
-// ── upgradePreview（docs/03 節5・節7） ──────────────────────────────
+// ── 本気モードの敵ダメージ強化（docs/adr/0003-repetition-window.md 決定4） ────────
 //
-// 強化画面に数字が1つも出ていなかった（docs/01 の画面一覧は「現在値と3択」を要求している）。
-// ここでも「表示値が実際の強化結果と一致する」という関係だけを見る。
+// 敵HPが半分以下（desperate）になると、敵の全手の damage に desperateBonus が足される。
+// `ctx.enemyHands` と `enemyForecast` の両方が同じ「敵の手の表」を通ることを縛る
+// （節5「敵の手の表（enemyHandTable）」。片方だけ本気の強化を掛けると
+// 「負けたら -N」の表示が実ダメージと食い違う）。
+
+describe('敵の本気モード強化（desperate）', () => {
+  it('enemyForecast: desperate 局面は normal 局面より、全手の damage が desperateBonus だけ大きい', () => {
+    const started = startGame(createGame());
+    expect(started.battle).not.toBeNull();
+    if (started.battle === null) return;
+
+    const enemy = currentEnemy(started);
+    expect(enemy).not.toBeNull();
+    if (enemy === null) return;
+
+    // enemyHeat は両方とも NO_HEAT のまま、敵HPだけを操作して2つの局面を作る。
+    // desperateBonus 以外の条件（履歴・強化）を揃えることで、差分がちょうど
+    // desperateBonus になることを検証できる。
+    const normalState: GameState = {
+      ...started,
+      battle: { ...started.battle, enemyHp: started.battle.enemyMaxHp },
+    };
+    const desperateState: GameState = {
+      ...started,
+      battle: { ...started.battle, enemyHp: Math.floor(started.battle.enemyMaxHp / 2) },
+    };
+
+    const normalForecast = enemyForecast(normalState);
+    const desperateForecast = enemyForecast(desperateState);
+
+    expect(normalForecast).not.toBeNull();
+    expect(desperateForecast).not.toBeNull();
+    if (normalForecast === null || desperateForecast === null) return;
+
+    expect(normalForecast.phase).toBe('normal');
+    expect(desperateForecast.phase).toBe('desperate');
+
+    for (const hand of HANDS) {
+      expect(desperateForecast.damage[hand]).toBe(normalForecast.damage[hand] + enemy.desperateBonus);
+    }
+  });
+
+  it('desperate 局面で負けたターンの damageToPlayer が、その直前の enemyForecast の damage と一致する', () => {
+    const seeds = Array.from({ length: 300 }, (_, i) => i + 1);
+    const MAX_TURNS_PER_SEED = 60;
+
+    const found = ((): { before: GameState; after: GameState } | null => {
+      for (const seed of seeds) {
+        let state = startGame(createGame());
+        const rng = createRng(seed);
+
+        for (let i = 0; i < MAX_TURNS_PER_SEED && state.phase === 'battle'; i += 1) {
+          const before = state;
+          const forecastBefore = enemyForecast(before);
+          const after = playHand(before, pickHand(i), rng);
+
+          if (
+            forecastBefore !== null &&
+            forecastBefore.phase === 'desperate' &&
+            after.lastLog !== null &&
+            after.lastLog.outcome === 'lose'
+          ) {
+            return { before, after };
+          }
+          state = after;
+        }
+      }
+      return null;
+    })();
+
+    expect(
+      found,
+      `${seeds.length}シードで desperate 局面かつ負けたターンが見つからなかった。` +
+        '実装のバグではなく乱数の巡り合わせの可能性が高い',
+    ).not.toBeNull();
+    if (found === null) return;
+
+    const { before, after } = found;
+    expect(after.lastLog).not.toBeNull();
+    if (after.lastLog === null) return;
+
+    const forecast = enemyForecast(before);
+    expect(forecast).not.toBeNull();
+    if (forecast === null) return;
+    expect(forecast.phase).toBe('desperate');
+
+    expect(forecast.damage[after.lastLog.enemyHand]).toBe(after.lastLog.damageToPlayer);
+  });
+});
+
+// ── upgradePreview（docs/03 節2・節5・節7） ──────────────────────────────
+//
+// 強化の行き先が手ごとに変わった（ADR 0003）。「next.damage が必ず current.damage+1」は
+// もう成り立たない。UPGRADE_TARGETS[hand] が指す側だけが+1になる、という「関係」を見る。
+// 「グーは stareBonus」とはテストに直書きしない（UPGRADE_TARGETS を data から import する）。
 
 describe('upgradePreview', () => {
-  it('next は current より damage が1だけ大きい（heal と stareBonus は動かない）', () => {
+  it('next は UPGRADE_TARGETS[hand] が指す側だけ current より1大きい（もう片方と heal は動かない）', () => {
     const state = startGame(createGame());
 
     for (const hand of HANDS) {
       const { current, next } = upgradePreview(state, hand);
+      const target = UPGRADE_TARGETS[hand];
 
-      expect(next.damage).toBe(current.damage + 1);
+      if (target === 'damage') {
+        expect(next.damage).toBe(current.damage + 1);
+        expect(next.stareBonus).toBe(current.stareBonus);
+      } else {
+        expect(next.stareBonus).toBe(current.stareBonus + 1);
+        expect(next.damage).toBe(current.damage);
+      }
       expect(next.heal).toBe(current.heal);
-      expect(next.stareBonus).toBe(current.stareBonus);
     }
   });
 
@@ -475,14 +606,107 @@ describe('upgradePreview', () => {
     expect(upgradePreview(afterChoice, 'rock').current).toEqual(promised);
   });
 
-  it('熱を含めない（同じ手を連打した直後でも current が下がらない）', () => {
+  it('熱（連打の履歴）を含めない（同じ手を連打した直後でも current が下がらない）', () => {
     const before = startGame(createGame());
     const beforePreview = upgradePreview(before, 'rock');
 
     const rng = createRng(9);
     const after = playHand(before, 'rock', rng);
 
-    expect(after.playerHeat.rock).toBeGreaterThan(0);
+    expect(after.playerHeat.length).toBeGreaterThan(0);
     expect(upgradePreview(after, 'rock')).toEqual(beforePreview);
+  });
+});
+
+// ── handOutlook（docs/03 節5。ADR 0003 決定1の heatCost） ────────────────
+
+describe('handOutlook', () => {
+  it('戦闘中でなければ null', () => {
+    const state = createGame();
+
+    for (const hand of HANDS) {
+      expect(handOutlook(state, hand)).toBeNull();
+    }
+  });
+
+  it('onWin は damagePreview と同じ値', () => {
+    const state = startGame(createGame());
+
+    for (const hand of HANDS) {
+      const outlook = handOutlook(state, hand);
+      expect(outlook).not.toBeNull();
+      if (outlook === null) continue;
+
+      expect(outlook.onWin).toBe(damagePreview(state, hand));
+    }
+  });
+
+  it('heatCost は 0 以上', () => {
+    const state = startGame(createGame());
+
+    for (const hand of HANDS) {
+      const outlook = handOutlook(state, hand);
+      expect(outlook).not.toBeNull();
+      if (outlook === null) continue;
+
+      expect(outlook.heatCost).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('heatCost は、この手を使った直後の playerHandTable の damage 低下量と一致する（戦闘が続く場合）', () => {
+    // **同じ手を出し続ける。** 3手を巡回させると窓の中の回数が allowed を超えないので
+    // heatCost が常に 0 になり、「0 と 0 を比べるだけ」のテストになってしまう。
+    // 連打してはじめて heatCost > 0 の局面が出る（ADR 0003 決定1）。
+    const seeds = Array.from({ length: 100 }, (_, i) => i + 1);
+    const MAX_TURNS_PER_SEED = 50;
+    const HAND: Hand = 'rock';
+
+    const records = ((): { before: GameState; after: GameState }[] => {
+      for (const seed of seeds) {
+        let state = startGame(createGame());
+        const rng = createRng(seed);
+        const turns: { before: GameState; after: GameState }[] = [];
+
+        for (let i = 0; i < MAX_TURNS_PER_SEED && state.phase === 'battle'; i += 1) {
+          const before = state;
+          const after = playHand(before, HAND, rng);
+          if (after.phase !== 'battle') break;
+          turns.push({ before, after });
+          state = after;
+        }
+
+        // 弱化が乗るところまで連打できたシードを採用する
+        if (turns.some(({ before }) => handOutlook(before, HAND) !== null)) {
+          const withCost = turns.filter(
+            ({ before }) => (handOutlook(before, HAND)?.heatCost ?? 0) > 0,
+          );
+          if (withCost.length > 0) return turns;
+        }
+      }
+      return [];
+    })();
+
+    expect(
+      records.length,
+      `${seeds.length}シードで heatCost > 0 になる連打の局面が見つからなかった。` +
+        '実装のバグか、HEAT_RULE の allowed が窓に対して大きすぎる可能性がある',
+    ).toBeGreaterThan(0);
+
+    let sawNonZero = false;
+
+    for (const { before, after } of records) {
+      const outlook = handOutlook(before, HAND);
+      expect(outlook).not.toBeNull();
+      if (outlook === null) continue;
+
+      const beforeDamage = playerHandTable(before)[HAND].damage;
+      const afterDamage = playerHandTable(after)[HAND].damage;
+
+      expect(outlook.heatCost).toBe(beforeDamage - afterDamage);
+      if (outlook.heatCost > 0) sawNonZero = true;
+    }
+
+    // 全ターン 0 のまま通ってしまうと、この関係を何も縛っていないのと同じ
+    expect(sawNonZero, 'heatCost が一度も 0 より大きくならなかった').toBe(true);
   });
 });
