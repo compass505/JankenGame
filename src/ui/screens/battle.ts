@@ -58,6 +58,12 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
   portrait.alt = enemy.name;
   stage.appendChild(portrait);
 
+  if (log !== null && log.damageToEnemy > 0) {
+    stage.appendChild(renderBattleEffect('hit'));
+  } else if (log !== null && log.healToEnemy > 0) {
+    stage.appendChild(renderBattleEffect('heal'));
+  }
+
   const nameplate = document.createElement('div');
   nameplate.className = 'battle-stage__nameplate';
   nameplate.textContent = enemy.name;
@@ -108,6 +114,12 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
   playerPanel.appendChild(renderHpBar('自分', battle.playerHp, battle.playerMaxHp));
 
   if (log !== null && log.damageToPlayer > 0) {
+    playerPanel.appendChild(renderBattleEffect('hit'));
+  } else if (log !== null && log.healToPlayer > 0) {
+    playerPanel.appendChild(renderBattleEffect('heal'));
+  }
+
+  if (log !== null && log.damageToPlayer > 0) {
     const pop = document.createElement('div');
     pop.className = 'damage-pop damage-pop--player';
     pop.textContent = `-${String(log.damageToPlayer)}`;
@@ -145,4 +157,13 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
   el.appendChild(handRow);
 
   return el;
+}
+
+function renderBattleEffect(kind: 'hit' | 'heal'): HTMLImageElement {
+  const effect = document.createElement('img');
+  effect.className = `battle-effect battle-effect--${kind}`;
+  effect.src = `/assets/effect-${kind}.png`;
+  effect.alt = '';
+  effect.setAttribute('aria-hidden', 'true');
+  return effect;
 }

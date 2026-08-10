@@ -5,6 +5,13 @@ export function renderResult(state: GameState, actions: Actions): HTMLElement {
   const el = document.createElement('main');
   el.className = state.cleared ? 'screen screen--result screen--cleared' : 'screen screen--result screen--gameover';
 
+  const emblem = document.createElement('img');
+  emblem.className = 'result-emblem';
+  emblem.src = state.cleared ? '/assets/result-victory.png' : '/assets/result-gameover.png';
+  emblem.alt = '';
+  emblem.setAttribute('aria-hidden', 'true');
+  el.appendChild(emblem);
+
   const title = document.createElement('h1');
   title.className = 'screen__title';
   title.textContent = state.cleared ? 'クリア！' : 'ゲームオーバー';

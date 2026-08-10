@@ -37,6 +37,30 @@ body {
   text-align: center;
 }
 
+.screen--title,
+.screen--upgrade {
+  min-height: calc(100vh - 32px);
+  justify-content: center;
+  padding: 32px 20px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background-position: center;
+  background-size: cover;
+  overflow: hidden;
+}
+
+.screen--title {
+  background-image:
+    linear-gradient(to bottom, #07111d52 0%, #07111d72 48%, #07111de8 100%),
+    url('/assets/title-bg.png');
+}
+
+.screen--upgrade {
+  background-image:
+    linear-gradient(to bottom, #07111d9c 0%, #07111db8 55%, #07111df2 100%),
+    url('/assets/upgrade-bg.png');
+}
+
 .screen__title {
   color: var(--accent);
   margin: 0;
@@ -53,6 +77,25 @@ body {
 .screen__lead {
   margin: 0;
   opacity: 0.85;
+}
+
+.screen--title .screen__title,
+.screen--upgrade .screen__title,
+.screen--title .screen__lead,
+.screen--upgrade .screen__lead {
+  text-shadow: 0 2px 12px #06101c;
+}
+
+.title-logo,
+.result-emblem {
+  width: min(52vw, 210px);
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.result-emblem {
+  width: min(58vw, 240px);
 }
 
 .primary-button {
@@ -145,6 +188,43 @@ body {
   height: 260px;
 }
 
+.battle-effect {
+  position: absolute;
+  z-index: 2;
+  width: min(48%, 170px);
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+  animation: battle-effect 0.7s ease-out both;
+}
+
+.battle-stage .battle-effect {
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+}
+
+.player-panel .battle-effect {
+  right: 8px;
+  top: -42px;
+  width: min(30vw, 116px);
+}
+
+@keyframes battle-effect {
+  0% {
+    opacity: 0;
+    scale: 0.55;
+  }
+  22% {
+    opacity: 1;
+    scale: 1.08;
+  }
+  100% {
+    opacity: 0;
+    scale: 1;
+  }
+}
+
 /* 待機の微動。生きて見せるためだけのもので、目を引きに行かない */
 .enemy-panel__portrait {
   animation: idle-bob 3.2s ease-in-out infinite;
@@ -194,7 +274,10 @@ body {
   .enemy-panel__portrait--attack,
   .clash,
   .clash__icon,
-  .damage-pop {
+  .damage-pop,
+  .battle-effect,
+  .stare-display__effect,
+  .stare-display--pulse .stare-display__value {
     animation: none;
   }
 }
@@ -267,10 +350,35 @@ body {
 /* にらみ */
 
 .stare-display {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
+}
+
+.stare-display__effect {
+  position: absolute;
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+  pointer-events: none;
+  animation: stare-effect 0.7s ease-out both;
+}
+
+@keyframes stare-effect {
+  0% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
 }
 
 .stare-display__label {

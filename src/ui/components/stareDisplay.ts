@@ -3,6 +3,13 @@ export function renderStareDisplay(stare: number, justIncreased: boolean): HTMLE
   wrap.className = 'stare-display';
   if (justIncreased) {
     wrap.classList.add('stare-display--pulse');
+
+    const effect = document.createElement('img');
+    effect.className = 'stare-display__effect';
+    effect.src = '/assets/effect-stare.png';
+    effect.alt = '';
+    effect.setAttribute('aria-hidden', 'true');
+    wrap.appendChild(effect);
   }
 
   const label = document.createElement('div');

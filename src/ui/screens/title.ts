@@ -5,6 +5,13 @@ export function renderTitle(_state: GameState, actions: Actions): HTMLElement {
   const el = document.createElement('main');
   el.className = 'screen screen--title';
 
+  const logo = document.createElement('img');
+  logo.className = 'title-logo';
+  logo.src = '/assets/title-logo.png';
+  logo.alt = '';
+  logo.setAttribute('aria-hidden', 'true');
+  el.appendChild(logo);
+
   const title = document.createElement('h1');
   title.className = 'screen__title';
   title.textContent = 'じゃんけんRPG';
