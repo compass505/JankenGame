@@ -2,7 +2,7 @@ import { decideEnemyHand } from '@/domain/enemy';
 import type { DrawRule, EnemyDef } from '@/domain/enemy';
 import { judge } from '@/domain/hand';
 import type { Hand, Outcome } from '@/domain/hand';
-import type { HandTable } from '@/domain/handTable';
+import type { HandTable, HandValue } from '@/domain/handTable';
 import type { Rng } from '@/lib/rng';
 
 export const STARE_MAX = 2;
@@ -57,6 +57,18 @@ export function createBattle(playerMaxHp: number, enemy: EnemyDef): BattleState 
   };
 }
 
+/**
+ * 勝った側が実際に与えるダメージ。
+ * 耐性は damage にだけ掛かり、にらみのぶんには掛からない。
+ * 耐性を持たない側（プレイヤーが受ける側）は resistance に 1 を渡す。
+ *
+ * **画面に出すダメージもこの関数を通すこと。** 式を2箇所に持つと必ずずれる
+ * （実際に、耐性0.5の敵でボタンの表示と実ダメージが食い違っていた）。
+ */
+export function dealtDamage(value: HandValue, resistance: number, stare: number): number {
+  return Math.max(1, Math.floor(value.damage * resistance)) + stare * value.stareBonus;
+}
+
 export function resolveTurn(
   state: BattleState,
   playerHand: Hand,
@@ -99,8 +111,7 @@ export function resolveTurn(
     }
   } else if (outcome === 'win') {
     const value = ctx.playerHands[playerHand];
-    const base = Math.max(1, Math.floor(value.damage * ctx.enemy.resistance[playerHand]));
-    const dealt = base + state.stare * value.stareBonus;
+    const dealt = dealtDamage(value, ctx.enemy.resistance[playerHand], state.stare);
 
     damageToEnemy = dealt;
     healToPlayer = Math.max(
@@ -110,7 +121,7 @@ export function resolveTurn(
     stareAfter = 0;
   } else {
     const value = ctx.enemyHands[enemyHand];
-    const dealt = value.damage + state.stare * value.stareBonus;
+    const dealt = dealtDamage(value, 1, state.stare);
 
     damageToPlayer = dealt;
     healToEnemy = Math.max(

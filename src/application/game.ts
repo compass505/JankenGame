@@ -1,6 +1,7 @@
-import { createBattle, resolveTurn } from '@/domain/battle';
+import { createBattle, dealtDamage, resolveTurn } from '@/domain/battle';
 import type { BattleState, TurnLog } from '@/domain/battle';
-import type { EnemyDef } from '@/domain/enemy';
+import { enemyPhase, handProbabilities } from '@/domain/enemy';
+import type { EnemyDef, EnemyPhase } from '@/domain/enemy';
 import type { Hand } from '@/domain/hand';
 import {
   applyUpgrade,
@@ -20,6 +21,13 @@ import { STAGES } from '@/data/stages';
 import type { Rng } from '@/lib/rng';
 
 export type Phase = 'title' | 'battle' | 'upgrade' | 'result';
+
+/** 敵がいま各手を出す確率と、その手で敵が勝ったときにこちらが受けるダメージ */
+export interface EnemyForecast {
+  readonly phase: EnemyPhase;
+  readonly probability: Readonly<Record<Hand, number>>;
+  readonly damage: Readonly<Record<Hand, number>>;
+}
 
 export interface GameState {
   readonly phase: Phase;
@@ -166,6 +174,45 @@ export function currentEnemy(state: GameState): EnemyDef | null {
 
 export function playerHandTable(state: GameState): HandTable {
   return applyHeat(buildHandTable(BASE_HANDS, state.upgrades), state.playerHeat);
+}
+
+/**
+ * 表示用。その手をいま出して勝ったときに実際に与えるダメージ。
+ * 強化・熱・耐性・にらみをすべて含む。戦闘中でなければ 0。
+ */
+export function damagePreview(state: GameState, hand: Hand): number {
+  const battle = state.battle;
+  const enemy = currentEnemy(state);
+  if (state.phase !== 'battle' || battle === null || enemy === null) {
+    return 0;
+  }
+
+  return dealtDamage(playerHandTable(state)[hand], enemy.resistance[hand], battle.stare);
+}
+
+/**
+ * 表示用。敵がいま各手を出す確率と、その手で敵が勝ったときにこちらが受けるダメージ。
+ * 敵の熱も反映する。戦闘中でなければ null。
+ */
+export function enemyForecast(state: GameState): EnemyForecast | null {
+  const battle = state.battle;
+  const enemy = currentEnemy(state);
+  if (state.phase !== 'battle' || battle === null || enemy === null) {
+    return null;
+  }
+
+  const phase = enemyPhase(battle.enemyHp, battle.enemyMaxHp);
+  const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat);
+
+  return {
+    phase,
+    probability: handProbabilities(enemy, phase),
+    damage: {
+      rock: dealtDamage(enemyHands.rock, 1, battle.stare),
+      scissors: dealtDamage(enemyHands.scissors, 1, battle.stare),
+      paper: dealtDamage(enemyHands.paper, 1, battle.stare),
+    },
+  };
 }
 
 export function heatPenalties(state: GameState): Readonly<Record<Hand, number>> {

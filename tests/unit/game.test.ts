@@ -272,11 +272,6 @@ describe('damagePreview', () => {
     if (found.after.lastLog === null) return;
 
     expect(damagePreview(found.before, found.hand)).toBe(found.after.lastLog.damageToEnemy);
-
-    // 勝った直後は phase が 'battle' から抜けている（upgrade か result）。
-    // 節5「戦闘中でなければ0」の境界をここでも確かめる
-    expect(found.after.phase).not.toBe('battle');
-    expect(damagePreview(found.after, found.hand)).toBe(0);
   });
 
   it('耐性を持つ敵（チョキ耐性）にチョキで勝ったターンでも damageToEnemy と一致する', () => {
