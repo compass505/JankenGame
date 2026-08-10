@@ -10,12 +10,40 @@ import type { Actions } from '@/ui/app';
 
 /**
  * ダメージ以外の持ち味。ここを出さないと3手が非対称であることが伝わらない
- * （`docs/adr/0001-battle-model.md`）。強化しても動かない値なので、前後は並べない。
+ * （`docs/adr/0001-battle-model.md`）。
+ *
+ * **にらみ倍率は強化で伸びる**（グー。`docs/adr/0003-repetition-window.md`）ので、
+ * 伸びる側は呼び出し側で前後を並べる。回復量は強化されない（終了保証）。
  */
-function traitOf(value: HandValue): string | null {
-  if (value.heal > 0) return `勝つと ${String(value.heal)} 回復`;
-  if (value.stareBonus > 0) return `にらみ1つで +${String(value.stareBonus)}`;
+function traitOf(value: HandValue): { label: string; value: string } | null {
+  if (value.heal > 0) return { label: '勝つと回復', value: String(value.heal) };
+  if (value.stareBonus > 0) return { label: 'にらみ1つで', value: `+${String(value.stareBonus)}` };
   return null;
+}
+
+/** 「3 → 4」の形。伸びない側は現在値だけを出す */
+function renderChange(from: string, to: string | null): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'upgrade-values__damage';
+
+  const fromEl = document.createElement('span');
+  fromEl.className = 'upgrade-values__from';
+  fromEl.textContent = from;
+  row.appendChild(fromEl);
+
+  if (to !== null) {
+    const arrow = document.createElement('span');
+    arrow.className = 'upgrade-values__arrow';
+    arrow.textContent = '→';
+    row.appendChild(arrow);
+
+    const toEl = document.createElement('span');
+    toEl.className = 'upgrade-values__to';
+    toEl.textContent = to;
+    row.appendChild(toEl);
+  }
+
+  return row;
 }
 
 export function renderUpgrade(state: GameState, actions: Actions): HTMLElement {
@@ -67,27 +95,13 @@ function renderUpgradeValues(state: GameState, hand: Hand, upgradable: boolean):
   const wrap = document.createElement('div');
   wrap.className = 'upgrade-values';
 
-  const damage = document.createElement('div');
-  damage.className = 'upgrade-values__damage';
-
-  const from = document.createElement('span');
-  from.className = 'upgrade-values__from';
-  from.textContent = String(current.damage);
-  damage.appendChild(from);
-
-  if (upgradable) {
-    const arrow = document.createElement('span');
-    arrow.className = 'upgrade-values__arrow';
-    arrow.textContent = '→';
-    damage.appendChild(arrow);
-
-    const to = document.createElement('span');
-    to.className = 'upgrade-values__to';
-    to.textContent = String(next.damage);
-    damage.appendChild(to);
-  }
-
-  wrap.appendChild(damage);
+  // 強化がどちらに乗るかは手ごとに違う（UPGRADE_TARGETS）。
+  // **伸びる側にだけ矢印を出す。** ダメージ固定でグーに「3 → 3」と出すと、
+  // 強化しても何も増えないように見える（ADR 0003 でにらみ倍率に移した）
+  const damageGrows = upgradable && next.damage !== current.damage;
+  wrap.appendChild(
+    renderChange(String(current.damage), damageGrows ? String(next.damage) : null),
+  );
 
   // 「ダメージ」は別行にする。数字と同じ行に置くと狭い画面で折り返す
   const unit = document.createElement('div');
@@ -104,9 +118,16 @@ function renderUpgradeValues(state: GameState, hand: Hand, upgradable: boolean):
 
   const trait = traitOf(current);
   if (trait !== null) {
+    const nextTrait = traitOf(next);
+    const traitGrows =
+      upgradable && nextTrait !== null && nextTrait.value !== trait.value;
+
     const traitEl = document.createElement('div');
     traitEl.className = 'upgrade-values__trait';
-    traitEl.textContent = trait;
+    traitEl.textContent = trait.label;
+    traitEl.appendChild(
+      renderChange(trait.value, traitGrows && nextTrait !== null ? nextTrait.value : null),
+    );
     wrap.appendChild(traitEl);
   }
 
