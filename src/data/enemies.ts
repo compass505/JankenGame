@@ -4,7 +4,7 @@ export const ENEMIES = {
   scarecrow: {
     id: 'scarecrow',
     name: 'かかし',
-    maxHp: 12,
+    maxHp: 16,
     weightsNormal: { rock: 0.34, scissors: 0.33, paper: 0.33 },
     weightsDesperate: { rock: 0.34, scissors: 0.33, paper: 0.33 },
     resistance: { rock: 1, scissors: 1, paper: 1 },
@@ -14,7 +14,7 @@ export const ENEMIES = {
   rockGuard: {
     id: 'rockGuard',
     name: '岩の番人',
-    maxHp: 14,
+    maxHp: 18,
     weightsNormal: { rock: 0.6, scissors: 0.2, paper: 0.2 },
     weightsDesperate: { rock: 0.5, scissors: 0.25, paper: 0.25 },
     resistance: { rock: 1, scissors: 1, paper: 1 },
@@ -24,7 +24,7 @@ export const ENEMIES = {
   shearBird: {
     id: 'shearBird',
     name: 'はさみ鳥',
-    maxHp: 14,
+    maxHp: 18,
     weightsNormal: { rock: 0.2, scissors: 0.6, paper: 0.2 },
     weightsDesperate: { rock: 0.25, scissors: 0.5, paper: 0.25 },
     resistance: { rock: 1, scissors: 1, paper: 1 },
@@ -34,7 +34,7 @@ export const ENEMIES = {
   paperEnvoy: {
     id: 'paperEnvoy',
     name: '紙の使者',
-    maxHp: 16,
+    maxHp: 21,
     weightsNormal: { rock: 0.2, scissors: 0.2, paper: 0.6 },
     weightsDesperate: { rock: 0.25, scissors: 0.25, paper: 0.5 },
     resistance: { rock: 1, scissors: 0.5, paper: 1 },
@@ -44,7 +44,7 @@ export const ENEMIES = {
   glicoKing: {
     id: 'glicoKing',
     name: 'グリコ王',
-    maxHp: 18,
+    maxHp: 23,
     weightsNormal: { rock: 0.3, scissors: 0.3, paper: 0.4 },
     weightsDesperate: { rock: 0.4, scissors: 0.2, paper: 0.4 },
     resistance: { rock: 1, scissors: 0.5, paper: 1 },
