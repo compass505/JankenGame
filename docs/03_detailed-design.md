@@ -495,6 +495,7 @@ import type { UpgradeCounts, HandTable, HeatCounts } from '@/domain/handTable';
 import type { BattleState, TurnLog } from '@/domain/battle';
 import type { EnemyDef } from '@/domain/enemy';
 import type { Rng } from '@/lib/rng';
+import { PLAYER_MAX_HP } from '@/data/player';
 
 export type Phase = 'title' | 'battle' | 'upgrade' | 'result';
 
@@ -509,8 +510,6 @@ export interface GameState {
   readonly playerHeat: HeatCounts;
   readonly enemyHeat: HeatCounts;
 }
-
-export const PLAYER_MAX_HP = 15;
 
 export function createGame(): GameState;
 export function startGame(state: GameState): GameState;
@@ -615,6 +614,17 @@ enemyHeat  = advanceHeat(state.enemyHeat, result.log.enemyHand)
 ## 6. `src/data/`
 
 **リテラルだけで書く。** 関数・アロー・分岐を書かない（レイヤチェッカが落とす）。
+
+### `src/data/player.ts`
+
+```ts
+/** プレイヤーの最大HP。5戦を通して増えない（回復は戦闘中のパーだけ） */
+export const PLAYER_MAX_HP = 15;
+```
+
+> **`application` ではなくここに置く理由。** 敵HPを動かすとクリア率が動くので、
+> 釣り合いを取るためにプレイヤーHPも一緒に触ることになる。**両方が `src/data/` に
+> 揃っていないと、バランス調整がロジック側に染み出す**（`CLAUDE.md` のレイヤ規約）。
 
 ### `src/data/hands.ts`
 

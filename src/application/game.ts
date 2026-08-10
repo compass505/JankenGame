@@ -15,6 +15,7 @@ import {
 } from '@/domain/handTable';
 import type { HandTable, HeatCounts, UpgradeCounts } from '@/domain/handTable';
 import { BASE_HANDS } from '@/data/hands';
+import { PLAYER_MAX_HP } from '@/data/player';
 import { STAGES } from '@/data/stages';
 import type { Rng } from '@/lib/rng';
 
@@ -30,8 +31,6 @@ export interface GameState {
   readonly playerHeat: HeatCounts;
   readonly enemyHeat: HeatCounts;
 }
-
-export const PLAYER_MAX_HP = 15;
 
 export function createGame(): GameState {
   return {
