@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  HEAT_GAIN,
-  HEAT_MAX_PENALTY,
   NO_HEAT,
   NO_UPGRADES,
   UPGRADE_MAX_PER_HAND,
@@ -11,7 +9,7 @@ import {
   buildHandTable,
   canUpgrade,
 } from '@/domain/handTable';
-import type { HandTable, HeatCounts, UpgradeCounts } from '@/domain/handTable';
+import type { HandTable, HeatCounts, HeatRule, UpgradeCounts } from '@/domain/handTable';
 
 describe('NO_UPGRADES / UPGRADE_MAX_PER_HAND', () => {
   it('NO_UPGRADES はすべて0', () => {
@@ -133,17 +131,16 @@ describe('buildHandTable', () => {
   });
 });
 
-describe('NO_HEAT / HEAT_GAIN / HEAT_MAX_PENALTY', () => {
+/**
+ * 熱の効き方はテスト内のローカルなフィクスチャにする。
+ * 実際の値は src/data/heat.ts にあり、/balance で動く（docs/04「data の数値を検証しない」）。
+ * 下の具体例はすべて docs/03 節2.5 のもので、この rule のときの値。
+ */
+const RULE: HeatRule = { gain: 4, maxPenalty: 3 };
+
+describe('NO_HEAT', () => {
   it('NO_HEAT はすべて0', () => {
     expect(NO_HEAT).toEqual({ rock: 0, scissors: 0, paper: 0 });
-  });
-
-  it('HEAT_GAIN は4', () => {
-    expect(HEAT_GAIN).toBe(4);
-  });
-
-  it('HEAT_MAX_PENALTY は3', () => {
-    expect(HEAT_MAX_PENALTY).toBe(3);
   });
 });
 
@@ -156,13 +153,13 @@ describe('applyHeat', () => {
   };
 
   it('NO_HEAT を渡すと base と同じ値になる', () => {
-    expect(applyHeat(base, NO_HEAT)).toEqual(base);
+    expect(applyHeat(base, NO_HEAT, RULE)).toEqual(base);
   });
 
   it('heal と stareBonus は動かさない（強化と同じく damage にしか触らない）', () => {
     const heat: HeatCounts = { rock: 10, scissors: 10, paper: 10 };
 
-    const table = applyHeat(base, heat);
+    const table = applyHeat(base, heat, RULE);
 
     expect(table.rock.heal).toBe(base.rock.heal);
     expect(table.rock.stareBonus).toBe(base.rock.stareBonus);
@@ -178,8 +175,8 @@ describe('applyHeat', () => {
     [7, 4], // floor(7/4) = 1段。2段にならないことが要点
     [13, 2],
     [40, 2], // 上限で止まる
-  ])('具体例: 熱%iのとき damage は%iになる（floor(熱/HEAT_GAIN)段の弱化）', (heat, expected) => {
-    const table = applyHeat(base, { rock: 0, scissors: heat, paper: 0 });
+  ])('具体例: 熱%iのとき damage は%iになる（floor(熱/rule.gain)段の弱化）', (heat, expected) => {
+    const table = applyHeat(base, { rock: 0, scissors: heat, paper: 0 }, RULE);
 
     expect(table.scissors.damage).toBe(expected);
   });
@@ -192,19 +189,19 @@ describe('applyHeat', () => {
     };
     const heavyHeat: HeatCounts = { rock: 100, scissors: 100, paper: 100 };
 
-    const table = applyHeat(lowBase, heavyHeat);
+    const table = applyHeat(lowBase, heavyHeat, RULE);
 
     expect(table.rock.damage).toBe(1);
     expect(table.scissors.damage).toBe(1);
     expect(table.paper.damage).toBe(1);
   });
 
-  it('弱化量は HEAT_MAX_PENALTY で頭打ち（熱13でも熱40でも同じdamage）', () => {
-    const table13 = applyHeat(base, { rock: 0, scissors: 13, paper: 0 });
-    const table40 = applyHeat(base, { rock: 0, scissors: 40, paper: 0 });
+  it('弱化量は rule.maxPenalty で頭打ち（熱13でも熱40でも同じdamage）', () => {
+    const table13 = applyHeat(base, { rock: 0, scissors: 13, paper: 0 }, RULE);
+    const table40 = applyHeat(base, { rock: 0, scissors: 40, paper: 0 }, RULE);
 
     expect(table13.scissors.damage).toBe(table40.scissors.damage);
-    expect(table40.scissors.damage).toBe(base.scissors.damage - HEAT_MAX_PENALTY);
+    expect(table40.scissors.damage).toBe(base.scissors.damage - RULE.maxPenalty);
   });
 
   it('引数の base と heat を書き換えない', () => {
@@ -212,7 +209,7 @@ describe('applyHeat', () => {
     const heat: HeatCounts = { rock: 0, scissors: 13, paper: 0 };
     const heatClone = { ...heat };
 
-    applyHeat(base, heat);
+    applyHeat(base, heat, RULE);
 
     expect(base).toEqual(baseClone);
     expect(heat).toEqual(heatClone);
@@ -223,19 +220,19 @@ describe('advanceHeat', () => {
   it('具体例: 熱4の手をもう一度出すと、先に1冷めてから+4されて7になる', () => {
     const heat: HeatCounts = { rock: 0, scissors: 4, paper: 0 };
 
-    expect(advanceHeat(heat, 'scissors')).toEqual({ rock: 0, scissors: 7, paper: 0 });
+    expect(advanceHeat(heat, 'scissors', RULE)).toEqual({ rock: 0, scissors: 7, paper: 0 });
   });
 
   it('具体例: 出さなかった手（熱4）は1冷め、出した手（rock）は0から+4される', () => {
     const heat: HeatCounts = { rock: 0, scissors: 4, paper: 0 };
 
-    expect(advanceHeat(heat, 'rock')).toEqual({ rock: 4, scissors: 3, paper: 0 });
+    expect(advanceHeat(heat, 'rock', RULE)).toEqual({ rock: 4, scissors: 3, paper: 0 });
   });
 
   it('熱が0の手は冷ましても0未満にならない', () => {
     const heat: HeatCounts = { rock: 0, scissors: 0, paper: 0 };
 
-    const next = advanceHeat(heat, 'scissors');
+    const next = advanceHeat(heat, 'scissors', RULE);
 
     expect(next.rock).toBe(0);
     expect(next.paper).toBe(0);
@@ -245,7 +242,7 @@ describe('advanceHeat', () => {
     const heat: HeatCounts = { rock: 1, scissors: 4, paper: 2 };
     const clone = { ...heat };
 
-    advanceHeat(heat, 'scissors');
+    advanceHeat(heat, 'scissors', RULE);
 
     expect(heat).toEqual(clone);
   });
@@ -254,7 +251,7 @@ describe('advanceHeat', () => {
     let heat: HeatCounts = NO_HEAT;
 
     for (let i = 0; i < 5; i += 1) {
-      heat = advanceHeat(heat, 'rock');
+      heat = advanceHeat(heat, 'rock', RULE);
       expect(heat.rock).toBeGreaterThanOrEqual(0);
       expect(heat.scissors).toBeGreaterThanOrEqual(0);
       expect(heat.paper).toBeGreaterThanOrEqual(0);

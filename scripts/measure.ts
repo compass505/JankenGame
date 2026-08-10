@@ -17,7 +17,7 @@ import type { BattleState } from '@/domain/battle';
 import { enemyPhase, handProbabilities } from '@/domain/enemy';
 import { HANDS } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
-import { advanceHeat, applyHeat, canUpgrade, HEAT_GAIN, HEAT_MAX_PENALTY } from '@/domain/handTable';
+import { advanceHeat, applyHeat, canUpgrade, heatPenalty } from '@/domain/handTable';
 import type { HandTable, HeatCounts } from '@/domain/handTable';
 import {
   chooseUpgrade,
@@ -29,6 +29,7 @@ import {
 } from '@/application/game';
 import type { GameState } from '@/application/game';
 import { BASE_HANDS } from '@/data/hands';
+import { HEAT_RULE } from '@/data/heat';
 import { STAGES } from '@/data/stages';
 import { createRng } from '@/lib/rng';
 import type { Rng } from '@/lib/rng';
@@ -94,10 +95,6 @@ function rngForcing(p: Readonly<Record<Hand, number>>, target: Hand): Rng {
   return { next: () => mid, int: fail, pick: fail };
 }
 
-function heatPenaltyOf(heat: number): number {
-  return Math.min(HEAT_MAX_PENALTY, Math.floor(heat / HEAT_GAIN));
-}
-
 /** 1ターン先だけを見て、HPの取り合いを評価する。にらみは将来の火力として割り引いて数える */
 function scoreTurn(before: BattleState, after: BattleState, hands: HandTable): number {
   const enemyLost = (before.enemyHp - after.enemyHp) / before.enemyMaxHp;
@@ -112,8 +109,8 @@ function scoreTurn(before: BattleState, after: BattleState, hands: HandTable): n
 
 /** その手を出すと次のターンにどれだけ火力が落ちるか。熱を見ない貪欲との差を出すために分けてある */
 function heatCost(heat: HeatCounts, hand: Hand, hands: HandTable, enemyMaxHp: number): number {
-  const now = heatPenaltyOf(heat[hand]);
-  const next = heatPenaltyOf(advanceHeat(heat, hand)[hand]);
+  const now = heatPenalty(heat[hand], HEAT_RULE);
+  const next = heatPenalty(advanceHeat(heat, hand, HEAT_RULE)[hand], HEAT_RULE);
   const damage = hands[hand].damage;
 
   // ダメージは1で止まるので、実際に失う量は「下がりしろ」で頭打ちになる
@@ -131,7 +128,7 @@ function greedy(name: string, useHeatCost: boolean): Strategy {
       if (battle === null || enemy === null) return 'rock';
 
       const playerHands = playerHandTable(state);
-      const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat);
+      const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE);
       const ctx = { playerHands, enemyHands, enemy };
       const p = handProbabilities(enemy, enemyPhase(battle.enemyHp, battle.enemyMaxHp));
 

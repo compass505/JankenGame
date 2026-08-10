@@ -49,49 +49,52 @@ export function buildHandTable(base: HandTable, counts: UpgradeCounts): HandTabl
 
 export type HeatCounts = Readonly<Record<Hand, number>>;
 
-/** 熱がこの値たまるごとに弱化が1段深くなる */
-export const HEAT_GAIN = 4;
-/** 弱化の上限 */
-export const HEAT_MAX_PENALTY = 3;
+/**
+ * 熱の効き方。**数値は引数で受け取る。**
+ * バランス調整で動かしたい数値なので、domain の定数にすると /balance で触れなくなる
+ * （domain は src/data/ を import できない）。実際の値は src/data/heat.ts にある。
+ */
+export interface HeatRule {
+  /** 熱がこの値たまるごとに弱化が1段深くなる */
+  readonly gain: number;
+  /** 弱化の上限 */
+  readonly maxPenalty: number;
+}
+
 export const NO_HEAT: HeatCounts = { rock: 0, scissors: 0, paper: 0 };
 
+/** 熱1つぶんの弱化の段数。**段数の式はここだけに置く**（application もこれを呼ぶ） */
+export function heatPenalty(heat: number, rule: HeatRule): number {
+  return Math.min(rule.maxPenalty, Math.floor(heat / rule.gain));
+}
+
 /** 熱による弱化を damage にだけ適用した表を返す */
-export function applyHeat(base: HandTable, heat: HeatCounts): HandTable {
+export function applyHeat(base: HandTable, heat: HeatCounts, rule: HeatRule): HandTable {
   return {
     rock: {
       ...base.rock,
-      damage: Math.max(
-        1,
-        base.rock.damage - Math.min(HEAT_MAX_PENALTY, Math.floor(heat.rock / HEAT_GAIN)),
-      ),
+      damage: Math.max(1, base.rock.damage - heatPenalty(heat.rock, rule)),
     },
     scissors: {
       ...base.scissors,
-      damage: Math.max(
-        1,
-        base.scissors.damage -
-          Math.min(HEAT_MAX_PENALTY, Math.floor(heat.scissors / HEAT_GAIN)),
-      ),
+      damage: Math.max(1, base.scissors.damage - heatPenalty(heat.scissors, rule)),
     },
     paper: {
       ...base.paper,
-      damage: Math.max(
-        1,
-        base.paper.damage - Math.min(HEAT_MAX_PENALTY, Math.floor(heat.paper / HEAT_GAIN)),
-      ),
+      damage: Math.max(1, base.paper.damage - heatPenalty(heat.paper, rule)),
     },
   };
 }
 
-/** ターン終わりの更新。全部を1冷ましてから、出した手に HEAT_GAIN を足す */
-export function advanceHeat(heat: HeatCounts, used: Hand): HeatCounts {
+/** ターン終わりの更新。全部を1冷ましてから、出した手に rule.gain を足す */
+export function advanceHeat(heat: HeatCounts, used: Hand, rule: HeatRule): HeatCounts {
   const next: Record<Hand, number> = {
     rock: Math.max(0, heat.rock - 1),
     scissors: Math.max(0, heat.scissors - 1),
     paper: Math.max(0, heat.paper - 1),
   };
 
-  next[used] += HEAT_GAIN;
+  next[used] += rule.gain;
 
   return next;
 }

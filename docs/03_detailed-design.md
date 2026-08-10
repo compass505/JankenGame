@@ -96,43 +96,60 @@ import type { Hand } from '@/domain/hand';
 
 export type HeatCounts = Readonly<Record<Hand, number>>;
 
-/** 熱がこの値たまるごとに弱化が1段深くなる */
-export const HEAT_GAIN = 4;
-/** 弱化の上限 */
-export const HEAT_MAX_PENALTY = 3;
+export interface HeatRule {
+  /** 熱がこの値たまるごとに弱化が1段深くなる */
+  readonly gain: number;
+  /** 弱化の上限 */
+  readonly maxPenalty: number;
+}
+
 export const NO_HEAT: HeatCounts; // { rock: 0, scissors: 0, paper: 0 }
 
-/** 熱による弱化を damage にだけ適用した表を返す */
-export function applyHeat(base: HandTable, heat: HeatCounts): HandTable;
+/** 熱1つぶんの弱化の段数。**段数の式はここだけに置く** */
+export function heatPenalty(heat: number, rule: HeatRule): number;
 
-/** ターン終わりの更新。全部を1冷ましてから、出した手に HEAT_GAIN を足す */
-export function advanceHeat(heat: HeatCounts, used: Hand): HeatCounts;
+/** 熱による弱化を damage にだけ適用した表を返す */
+export function applyHeat(base: HandTable, heat: HeatCounts, rule: HeatRule): HandTable;
+
+/** ターン終わりの更新。全部を1冷ましてから、出した手に rule.gain を足す */
+export function advanceHeat(heat: HeatCounts, used: Hand, rule: HeatRule): HeatCounts;
 ```
+
+> **数値を `HeatRule` で受け取る理由**（2026-08-10）。
+> `gain` と `maxPenalty` は**バランス調整で動かしたくなる数値**だが、
+> `domain/` は `src/data/` を import できない（`CLAUDE.md` のレイヤ規約）。
+> 定数として `domain/` に置くと `/balance` で触れなくなるので、**引数で受け取る。**
+> 実際の値は `src/data/heat.ts`（節6）にあり、**値そのものは ADR 0002 のまま**
+> （`gain: 4` / `maxPenalty: 3`）。置き場所を変えただけで決定は覆していない。
 
 ### `applyHeat`
 
 ```
+heatPenalty(h, rule) = min(rule.maxPenalty, floor(h / rule.gain))
+
 各手 h について:
-    penalty = min(HEAT_MAX_PENALTY, floor(heat[h] / HEAT_GAIN))
-    damage  = max(1, base[h].damage - penalty)
+    damage = max(1, base[h].damage - heatPenalty(heat[h], rule))
 heal と stareBonus は動かさない
 ```
+
+**段数の式を書き写さない。** `application` の `heatPenalties`（節5）も
+必ず `heatPenalty` を呼ぶ。同じ式が2箇所にあるとずれる（節4 の `dealtDamage` と同じ理由）。
 
 ### `advanceHeat`
 
 ```
 各手 h について: next[h] = max(0, heat[h] - 1)
-そのあと next[used] += HEAT_GAIN
+そのあと next[used] += rule.gain
 ```
 
 **順序が重要。** 先に全部冷ましてから足す。逆にすると出した手が1ターンぶん軽く冷める。
 
 **不変条件**
 
-- `applyHeat(base, NO_HEAT)` は `base` と同じ値
+- `applyHeat(base, NO_HEAT, rule)` は `base` と同じ値
 - `applyHeat` は `heal` と `stareBonus` を変えない（**強化と同じく damage にしか触らない**）
 - `damage` は 1 未満にならない
-- 弱化量は `HEAT_MAX_PENALTY` を超えない
+- 弱化量は `rule.maxPenalty` を超えない
 - `advanceHeat` は引数を書き換えず、新しいオブジェクトを返す
 - `heat[h] >= 0`
 
@@ -147,9 +164,11 @@ heat.scissors = 7  → penalty 1 → damage 4     （floor(7/4) = 1）
 heat.scissors = 13 → penalty 3 → damage 2     （floor(13/4) = 3）
 heat.scissors = 40 → penalty 3 → damage 2     （上限で止まる）
 
-advanceHeat({rock:0,scissors:4,paper:0}, 'scissors') = {rock:0,scissors:7,paper:0}
-advanceHeat({rock:0,scissors:4,paper:0}, 'rock')     = {rock:4,scissors:3,paper:0}
+advanceHeat({rock:0,scissors:4,paper:0}, 'scissors', rule) = {rock:0,scissors:7,paper:0}
+advanceHeat({rock:0,scissors:4,paper:0}, 'rock', rule)     = {rock:4,scissors:3,paper:0}
 ```
+
+（上の数値はすべて `rule = { gain: 4, maxPenalty: 3 }` のとき）
 
 ### 深めるのは速く、戻すのは遅い（実測・2026-08-10）
 
@@ -675,6 +694,15 @@ enemyHeat  = advanceHeat(state.enemyHeat, result.log.enemyHand)
 ## 6. `src/data/`
 
 **リテラルだけで書く。** 関数・アロー・分岐を書かない（レイヤチェッカが落とす）。
+
+### `src/data/heat.ts`
+
+```ts
+import type { HeatRule } from '@/domain/handTable';
+
+/** 熱の効き方。値は ADR 0002 のまま（置き場所だけ domain から移した） */
+export const HEAT_RULE: HeatRule = { gain: 4, maxPenalty: 3 };
+```
 
 ### `src/data/player.ts`
 

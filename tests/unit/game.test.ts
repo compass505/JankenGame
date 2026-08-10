@@ -13,7 +13,8 @@ import type { GameState } from '@/application/game';
 import { enemyPhase } from '@/domain/enemy';
 import { HANDS } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
-import { HEAT_MAX_PENALTY, NO_HEAT, advanceHeat, canUpgrade } from '@/domain/handTable';
+import { NO_HEAT, advanceHeat, canUpgrade } from '@/domain/handTable';
+import { HEAT_RULE } from '@/data/heat';
 import { STAGES } from '@/data/stages';
 import { createRng } from '@/lib/rng';
 
@@ -53,8 +54,8 @@ describe('playHand と熱の更新', () => {
     if (after.lastLog === null) return;
 
     // 敵が出した手は rng の中身ではなく lastLog から取る（乱数の実装詳細に依存させない）
-    expect(after.playerHeat).toEqual(advanceHeat(before.playerHeat, hand));
-    expect(after.enemyHeat).toEqual(advanceHeat(before.enemyHeat, after.lastLog.enemyHand));
+    expect(after.playerHeat).toEqual(advanceHeat(before.playerHeat, hand, HEAT_RULE));
+    expect(after.enemyHeat).toEqual(advanceHeat(before.enemyHeat, after.lastLog.enemyHand, HEAT_RULE));
   });
 
   it('あいこのターンでも playerHeat と enemyHeat が進む（節5「あいこのターンも更新する」）', () => {
@@ -92,8 +93,8 @@ describe('playHand と熱の更新', () => {
     if (after.lastLog === null) return;
     expect(after.lastLog.outcome).toBe('draw');
 
-    expect(after.playerHeat).toEqual(advanceHeat(before.playerHeat, hand));
-    expect(after.enemyHeat).toEqual(advanceHeat(before.enemyHeat, after.lastLog.enemyHand));
+    expect(after.playerHeat).toEqual(advanceHeat(before.playerHeat, hand, HEAT_RULE));
+    expect(after.enemyHeat).toEqual(advanceHeat(before.enemyHeat, after.lastLog.enemyHand, HEAT_RULE));
   });
 });
 
@@ -123,7 +124,7 @@ describe('chooseUpgrade と熱のリセット', () => {
     if (upgradeState === null) return;
 
     // リセットの検証として意味を持たせるため、直前の熱が0でないことを確認しておく
-    // （戦闘中に手を出している以上、最後に出した手の熱は必ず HEAT_GAIN 分たまっている）
+    // （戦闘中に手を出している以上、最後に出した手の熱は必ず rule.gain 分たまっている）
     expect(upgradeState.playerHeat).not.toEqual(NO_HEAT);
 
     // 上限に達している手は無いはず（1回目の強化なので upgrades は NO_UPGRADES）
@@ -141,7 +142,7 @@ describe('heatPenalties', () => {
     expect(heatPenalties(state)).toEqual({ rock: 0, scissors: 0, paper: 0 });
   });
 
-  it('不変条件: どの局面でも各手の弱化量は 0 以上 HEAT_MAX_PENALTY 以下', () => {
+  it('不変条件: どの局面でも各手の弱化量は 0 以上 rule.maxPenalty 以下', () => {
     let state = startGame(createGame());
     const rng = createRng(3);
 
@@ -151,7 +152,7 @@ describe('heatPenalties', () => {
       const penalties = heatPenalties(state);
       for (const hand of HANDS) {
         expect(penalties[hand]).toBeGreaterThanOrEqual(0);
-        expect(penalties[hand]).toBeLessThanOrEqual(HEAT_MAX_PENALTY);
+        expect(penalties[hand]).toBeLessThanOrEqual(HEAT_RULE.maxPenalty);
       }
     }
   });
@@ -166,7 +167,7 @@ describe('playerHandTable と熱', () => {
     const after = playHand(before, 'rock', rng);
     const afterTable = playerHandTable(after);
 
-    // 熱4で弱化1段（floor(HEAT_GAIN / HEAT_GAIN) === 1）。src/data/ の数値には依存しない
+    // 1回使うと熱が rule.gain になり弱化1段。src/data/ の数値には依存しない
     expect(afterTable.rock.damage).toBe(Math.max(1, beforeTable.rock.damage - 1));
     expect(afterTable.rock.heal).toBe(beforeTable.rock.heal);
     expect(afterTable.rock.stareBonus).toBe(beforeTable.rock.stareBonus);

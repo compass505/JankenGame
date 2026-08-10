@@ -9,13 +9,13 @@ import {
   applyHeat,
   buildHandTable,
   canUpgrade,
-  HEAT_GAIN,
-  HEAT_MAX_PENALTY,
+  heatPenalty,
   NO_HEAT,
   NO_UPGRADES,
 } from '@/domain/handTable';
 import type { HandTable, HeatCounts, UpgradeCounts } from '@/domain/handTable';
 import { BASE_HANDS } from '@/data/hands';
+import { HEAT_RULE } from '@/data/heat';
 import { PLAYER_MAX_HP } from '@/data/player';
 import { STAGES } from '@/data/stages';
 import type { Rng } from '@/lib/rng';
@@ -83,7 +83,7 @@ export function playHand(state: GameState, hand: Hand, rng: Rng): GameState {
 
   // 画面に出す表（playerHandTable）と実ダメージの元をずらさないため、同じ関数から取る
   const playerHands = playerHandTable(state);
-  const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat);
+  const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE);
   const result = resolveTurn(
     state.battle,
     hand,
@@ -95,8 +95,8 @@ export function playHand(state: GameState, hand: Hand, rng: Rng): GameState {
     rng,
   );
 
-  const playerHeat = advanceHeat(state.playerHeat, hand);
-  const enemyHeat = advanceHeat(state.enemyHeat, result.log.enemyHand);
+  const playerHeat = advanceHeat(state.playerHeat, hand, HEAT_RULE);
+  const enemyHeat = advanceHeat(state.enemyHeat, result.log.enemyHand, HEAT_RULE);
 
   if (result.state.outcome === null) {
     return {
@@ -173,7 +173,7 @@ export function currentEnemy(state: GameState): EnemyDef | null {
 }
 
 export function playerHandTable(state: GameState): HandTable {
-  return applyHeat(buildHandTable(BASE_HANDS, state.upgrades), state.playerHeat);
+  return applyHeat(buildHandTable(BASE_HANDS, state.upgrades), state.playerHeat, HEAT_RULE);
 }
 
 /**
@@ -202,7 +202,7 @@ export function enemyForecast(state: GameState): EnemyForecast | null {
   }
 
   const phase = enemyPhase(battle.enemyHp, battle.enemyMaxHp);
-  const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat);
+  const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE);
 
   return {
     phase,
@@ -217,8 +217,8 @@ export function enemyForecast(state: GameState): EnemyForecast | null {
 
 export function heatPenalties(state: GameState): Readonly<Record<Hand, number>> {
   return {
-    rock: Math.min(HEAT_MAX_PENALTY, Math.floor(state.playerHeat.rock / HEAT_GAIN)),
-    scissors: Math.min(HEAT_MAX_PENALTY, Math.floor(state.playerHeat.scissors / HEAT_GAIN)),
-    paper: Math.min(HEAT_MAX_PENALTY, Math.floor(state.playerHeat.paper / HEAT_GAIN)),
+    rock: heatPenalty(state.playerHeat.rock, HEAT_RULE),
+    scissors: heatPenalty(state.playerHeat.scissors, HEAT_RULE),
+    paper: heatPenalty(state.playerHeat.paper, HEAT_RULE),
   };
 }
