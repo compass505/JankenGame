@@ -716,3 +716,58 @@ body {
 .hand-button--resisted {
   border-style: dashed;
 }
+
+/* 強化画面の現在値と強化後の値（docs/03 節7） */
+
+.upgrade-values {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.upgrade-values__damage {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.upgrade-values__from {
+  font-weight: 700;
+  opacity: 0.7;
+}
+
+.upgrade-values__arrow {
+  opacity: 0.6;
+}
+
+.upgrade-values__to {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.upgrade-values__unit {
+  font-size: 0.65rem;
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+}
+
+.upgrade-values__trait {
+  font-size: 0.7rem;
+  opacity: 0.75;
+  text-align: center;
+}
+
+.upgrade-values__cap {
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--danger);
+  background: #e05a4f22;
+}

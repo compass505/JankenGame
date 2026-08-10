@@ -595,6 +595,19 @@ export function heatPenalties(state: GameState): Readonly<Record<Hand, number>>;
 export function damagePreview(state: GameState, hand: Hand): number;
 
 /**
+ * 表示用。**強化画面**で見せる「いまの値」と「強化したあとの値」。
+ * 上限に達している手は両方が同じ値になる。
+ * **熱は含めない**（次の戦闘の頭で `NO_HEAT` に戻るため。節5「熱の更新」）。
+ * **耐性も含めない**（次にどの敵と戦うかは、この画面の関心ではない）。
+ */
+export function upgradePreview(state: GameState, hand: Hand): UpgradePreview;
+
+export interface UpgradePreview {
+  readonly current: HandValue;
+  readonly next: HandValue;
+}
+
+/**
  * 表示用。敵がいま各手を出す確率と、その手で**敵が勝ったとき**にこちらが受けるダメージ。
  * 確率は現在のフェーズ（`normal` / `desperate`）のもの。敵の熱も反映する。
  * 戦闘中でなければ null。
@@ -824,7 +837,7 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 | `ui/app.ts` | `GameState` を1つ保持。入力 → `application` の関数 → 新しい state → 再描画 |
 | `ui/screens/title.ts` | タイトルと「はじめる」 |
 | `ui/screens/battle.ts` | 敵・双方のHP・**にらみ**・**敵の手の確率と威力**・**直前の手合わせ**・3ボタン |
-| `ui/screens/upgrade.ts` | 3択。上限の手は `disabled` で**表示は残す** |
+| `ui/screens/upgrade.ts` | 3択。**各手の現在値と強化後の値**。上限の手は `disabled` で**表示は残す** |
 | `ui/screens/result.ts` | クリア / ゲームオーバー、タイトルへ戻る |
 | `ui/components/` | HPバー、にらみ表示、手のボタン |
 
@@ -859,6 +872,18 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 - **敵の熱は数値としては出さない**が、「受けるダメージ」には反映される
   （`enemyForecast` が熱を適用した値を返す）。**画面に出る数字は必ず実値**にする
 - `hint` の一行は残す。数字と併記して読み方の助けにする
+
+### 強化画面にも数字を出す（2026-08-10 追加）
+
+`docs/01_requirements.md` の画面一覧は強化選択画面に「**グー/チョキ/パーの現在値**と3択」と
+書いているが、**数字が1つも出ていなかった。** どの手が今いくつで、+1 で何になるかが
+見えないまま選ばされるのは、戦闘画面と同じ「情報が足りない」問題。
+
+- 各手に `upgradePreview(state, hand)` の値を出す。**`3 → 4` のように前後を並べる**
+- 上限の手は `disabled` のまま**値は出す**（何が上限なのかが分かるように）
+- **パーの回復量とグーのにらみ倍率も併記する。** ダメージだけ見せると、
+  この3手が非対称であること（`docs/adr/0001-battle-model.md`）が伝わらない
+- **熱と耐性は出さない。** どちらも次の戦闘の話であり、この画面の関心ではない
 
 ### 直前の手合わせを見せる（2026-08-10 追加）
 

@@ -13,7 +13,7 @@ import {
   NO_HEAT,
   NO_UPGRADES,
 } from '@/domain/handTable';
-import type { HandTable, HeatCounts, UpgradeCounts } from '@/domain/handTable';
+import type { HandTable, HandValue, HeatCounts, UpgradeCounts } from '@/domain/handTable';
 import { BASE_HANDS } from '@/data/hands';
 import { HEAT_RULE } from '@/data/heat';
 import { PLAYER_MAX_HP } from '@/data/player';
@@ -21,6 +21,12 @@ import { STAGES } from '@/data/stages';
 import type { Rng } from '@/lib/rng';
 
 export type Phase = 'title' | 'battle' | 'upgrade' | 'result';
+
+/** 強化画面に出す、いまの値と強化したあとの値 */
+export interface UpgradePreview {
+  readonly current: HandValue;
+  readonly next: HandValue;
+}
 
 /** 敵がいま各手を出す確率と、その手で敵が勝ったときにこちらが受けるダメージ */
 export interface EnemyForecast {
@@ -188,6 +194,20 @@ export function damagePreview(state: GameState, hand: Hand): number {
   }
 
   return dealtDamage(playerHandTable(state)[hand], enemy.resistance[hand], battle.stare);
+}
+
+/**
+ * 表示用。強化画面で見せる「いまの値」と「強化したあとの値」。
+ * 上限に達している手は両方が同じ値になる（applyUpgrade が counts をそのまま返すため）。
+ *
+ * 熱は含めない（次の戦闘の頭で NO_HEAT に戻る）。
+ * 耐性も含めない（次にどの敵と戦うかは、この画面の関心ではない）。
+ */
+export function upgradePreview(state: GameState, hand: Hand): UpgradePreview {
+  return {
+    current: buildHandTable(BASE_HANDS, state.upgrades)[hand],
+    next: buildHandTable(BASE_HANDS, applyUpgrade(state.upgrades, hand))[hand],
+  };
 }
 
 /**
