@@ -109,8 +109,8 @@ function scoreTurn(before: BattleState, after: BattleState, hands: HandTable): n
 
 /** その手を出すと次のターンにどれだけ火力が落ちるか。熱を見ない貪欲との差を出すために分けてある */
 function heatCost(heat: HeatCounts, hand: Hand, hands: HandTable, enemyMaxHp: number): number {
-  const now = heatPenalty(heat[hand], HEAT_RULE);
-  const next = heatPenalty(advanceHeat(heat, hand, HEAT_RULE)[hand], HEAT_RULE);
+  const now = heatPenalty(heat, hand, HEAT_RULE);
+  const next = heatPenalty(advanceHeat(heat, hand, HEAT_RULE), hand, HEAT_RULE);
   const damage = hands[hand].damage;
 
   // ダメージは1で止まるので、実際に失う量は「下がりしろ」で頭打ちになる

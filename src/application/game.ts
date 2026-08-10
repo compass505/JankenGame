@@ -15,14 +15,14 @@ import {
   applyUpgrade,
   advanceHeat,
   applyHeat,
-  buildHandTable,
+  buildHandTableWith,
   canUpgrade,
   heatPenalty,
   NO_HEAT,
   NO_UPGRADES,
 } from '@/domain/handTable';
 import type { HandTable, HandValue, HeatCounts, UpgradeCounts } from '@/domain/handTable';
-import { BASE_HANDS } from '@/data/hands';
+import { BASE_HANDS, UPGRADE_TARGETS } from '@/data/hands';
 import { HEAT_RULE } from '@/data/heat';
 import { PLAYER_MAX_HP } from '@/data/player';
 import { STAGES } from '@/data/stages';
@@ -41,8 +41,6 @@ export interface EnemyForecast {
   readonly phase: EnemyPhase;
   readonly probability: Readonly<Record<Hand, number>>;
   readonly damage: Readonly<Record<Hand, number>>;
-  /** 敵の各手の熱による弱化段階。UIでは数値ではなく状態名で見せる。 */
-  readonly heatPenalty: Readonly<Record<Hand, number>>;
 }
 
 /** 手を選んだあとの3つの結果。期待値に丸めず、判断材料をそのまま返す。 */
@@ -53,13 +51,6 @@ export interface HandOutlook {
   readonly damageOnDraw: number;
   readonly worstOnLose: number;
   readonly heatCost: number;
-}
-
-/** 現在の熱が、手を使わなかった場合にいつ1段軽くなるか。 */
-export interface HeatRecoveryPreview {
-  readonly currentPenalty: number;
-  readonly turnsUntilRelief: number;
-  readonly penaltyAfterRelief: number;
 }
 
 export interface GameState {
@@ -116,7 +107,8 @@ export function playHand(state: GameState, hand: Hand, rng: Rng): GameState {
 
   // 画面に出す表（playerHandTable）と実ダメージの元をずらさないため、同じ関数から取る
   const playerHands = playerHandTable(state);
-  const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE);
+  const phase = enemyPhase(state.battle.enemyHp, state.battle.enemyMaxHp);
+  const enemyHands = enemyHandTable(state, enemy, phase);
   const result = resolveTurn(
     state.battle,
     hand,
@@ -205,8 +197,36 @@ export function currentEnemy(state: GameState): EnemyDef | null {
   return STAGES[state.stageIndex] ?? null;
 }
 
+function enemyHandTable(
+  state: GameState,
+  enemy: EnemyDef,
+  phase: EnemyPhase,
+): HandTable {
+  const base = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE);
+  if (phase !== 'desperate' || enemy.desperateBonus <= 0) {
+    return base;
+  }
+
+  return {
+    rock: { ...base.rock, damage: base.rock.damage + enemy.desperateBonus },
+    scissors: { ...base.scissors, damage: base.scissors.damage + enemy.desperateBonus },
+    paper: { ...base.paper, damage: base.paper.damage + enemy.desperateBonus },
+  };
+}
+
+/** プレイヤーの表の唯一の組み立て口。強化を足してから弱化を引く（docs/03 節2.5 の適用順序）。
+ *  履歴を差し替えられるようにしてあるのは、handOutlook が「次のターンの表」を要るため。
+ *  式をここ1箇所に閉じ込めないと、片方だけ直したときに画面の数字と実ダメージがずれる */
+function playerHandTableWith(state: GameState, history: HeatCounts): HandTable {
+  return applyHeat(
+    buildHandTableWith(BASE_HANDS, state.upgrades, UPGRADE_TARGETS),
+    history,
+    HEAT_RULE,
+  );
+}
+
 export function playerHandTable(state: GameState): HandTable {
-  return applyHeat(buildHandTable(BASE_HANDS, state.upgrades), state.playerHeat, HEAT_RULE);
+  return playerHandTableWith(state, state.playerHeat);
 }
 
 /**
@@ -256,8 +276,7 @@ export function handOutlook(state: GameState, hand: Hand): HandOutlook | null {
 
   const currentDamage = value.damage;
   const nextHeat = advanceHeat(state.playerHeat, hand, HEAT_RULE);
-  const nextDamage = applyHeat(buildHandTable(BASE_HANDS, state.upgrades), nextHeat, HEAT_RULE)[hand]
-    .damage;
+  const nextDamage = playerHandTableWith(state, nextHeat)[hand].damage;
 
   return {
     onWin,
@@ -278,8 +297,12 @@ export function handOutlook(state: GameState, hand: Hand): HandOutlook | null {
  */
 export function upgradePreview(state: GameState, hand: Hand): UpgradePreview {
   return {
-    current: buildHandTable(BASE_HANDS, state.upgrades)[hand],
-    next: buildHandTable(BASE_HANDS, applyUpgrade(state.upgrades, hand))[hand],
+    current: buildHandTableWith(BASE_HANDS, state.upgrades, UPGRADE_TARGETS)[hand],
+    next: buildHandTableWith(
+      BASE_HANDS,
+      applyUpgrade(state.upgrades, hand),
+      UPGRADE_TARGETS,
+    )[hand],
   };
 }
 
@@ -295,7 +318,7 @@ export function enemyForecast(state: GameState): EnemyForecast | null {
   }
 
   const phase = enemyPhase(battle.enemyHp, battle.enemyMaxHp);
-  const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE);
+  const enemyHands = enemyHandTable(state, enemy, phase);
 
   return {
     phase,
@@ -305,39 +328,13 @@ export function enemyForecast(state: GameState): EnemyForecast | null {
       scissors: dealtDamage(enemyHands.scissors, 1, battle.stare),
       paper: dealtDamage(enemyHands.paper, 1, battle.stare),
     },
-    heatPenalty: {
-      rock: heatPenalty(state.enemyHeat.rock, HEAT_RULE),
-      scissors: heatPenalty(state.enemyHeat.scissors, HEAT_RULE),
-      paper: heatPenalty(state.enemyHeat.paper, HEAT_RULE),
-    },
   };
 }
 
 export function heatPenalties(state: GameState): Readonly<Record<Hand, number>> {
   return {
-    rock: heatPenalty(state.playerHeat.rock, HEAT_RULE),
-    scissors: heatPenalty(state.playerHeat.scissors, HEAT_RULE),
-    paper: heatPenalty(state.playerHeat.paper, HEAT_RULE),
-  };
-}
-
-/** 表示用。手を使わずに冷ました場合、現在の弱化があと何ターン続くか。 */
-export function heatRecoveryPreview(state: GameState, hand: Hand): HeatRecoveryPreview {
-  const currentPenalty = heatPenalty(state.playerHeat[hand], HEAT_RULE);
-  if (currentPenalty === 0) {
-    return { currentPenalty: 0, turnsUntilRelief: 0, penaltyAfterRelief: 0 };
-  }
-
-  let cooledHeat = state.playerHeat[hand];
-  let turnsUntilRelief = 0;
-  while (heatPenalty(cooledHeat, HEAT_RULE) >= currentPenalty && cooledHeat > 0) {
-    cooledHeat -= 1;
-    turnsUntilRelief += 1;
-  }
-
-  return {
-    currentPenalty,
-    turnsUntilRelief,
-    penaltyAfterRelief: heatPenalty(cooledHeat, HEAT_RULE),
+    rock: heatPenalty(state.playerHeat, 'rock', HEAT_RULE),
+    scissors: heatPenalty(state.playerHeat, 'scissors', HEAT_RULE),
+    paper: heatPenalty(state.playerHeat, 'paper', HEAT_RULE),
   };
 }

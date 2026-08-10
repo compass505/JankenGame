@@ -1,10 +1,4 @@
-import {
-  currentEnemy,
-  enemyForecast,
-  handOutlook,
-  heatPenalties,
-  heatRecoveryPreview,
-} from '@/application/game';
+import { currentEnemy, enemyForecast, handOutlook, heatPenalties } from '@/application/game';
 import type { GameState } from '@/application/game';
 import { STAGES } from '@/data/stages';
 import { HANDS } from '@/domain/hand';
@@ -194,7 +188,6 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
       renderHandButton({
         hand,
         heatPenalty: penalties[hand],
-        heatRecovery: heatRecoveryPreview(state, hand),
         outlook: handOutlook(state, hand) ?? undefined,
         resistance: enemy.resistance[hand],
         onClick: () => {

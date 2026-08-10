@@ -37,8 +37,13 @@ echo "レイヤ規約チェック"
 echo
 
 # --- src/domain/ は純粋であること ---
+#
+# メンバアクセスの形（window. / document[ 等）だけを拾う。
+# 名前だけで弾くと HeatRule.window（docs/03 節2.5 の「窓の広さ」）のような
+# 正当なプロパティ名まで違反になる。DOM は必ず何かを生やして使うので、
+# 「. か [ が続くこと」を条件にしても検出力はほぼ落ちない。
 report "domain が DOM に触れている" \
-  "$(scan src/domain '\b(document|window|localStorage|sessionStorage)\b')" \
+  "$(scan src/domain '(^|[^.[:alnum:]_$])(document|window|localStorage|sessionStorage)[[:space:]]*[.[]')" \
   "domain はブラウザなしでテストできなければならない。UI 層へ移すこと。"
 
 report "domain が Math.random を直接呼んでいる" \

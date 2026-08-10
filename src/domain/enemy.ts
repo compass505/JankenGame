@@ -13,6 +13,9 @@ export interface EnemyDef {
   readonly weightsNormal: HandWeights;
   readonly weightsDesperate: HandWeights;
   readonly resistance: Readonly<Record<Hand, number>>;
+  /** 本気（desperate）のとき、敵の全手のダメージに足す量。0 なら強化なし。
+   *  掛けるのは application 側（docs/03 節5）。ここは値を持つだけ */
+  readonly desperateBonus: number;
   readonly drawRule: DrawRule;
   readonly hint: string;
 }

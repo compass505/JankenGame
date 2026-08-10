@@ -1,4 +1,4 @@
-import type { HandOutlook, HeatRecoveryPreview } from '@/application/game';
+import type { HandOutlook } from '@/application/game';
 import type { Hand } from '@/domain/hand';
 import { HAND_LABEL, renderHandIcon } from '@/ui/components/handIcon';
 
@@ -6,10 +6,8 @@ export interface HandButtonOptions {
   readonly hand: Hand;
   /** いま出して勝ったときの実ダメージ。必ず application の damagePreview を渡す */
   readonly damagePreview?: number;
-  /** 熱による弱化量（0〜HEAT_MAX_PENALTY）。0 なら何も出さない */
+  /** 連打による弱化量（0〜HEAT_RULE.maxPenalty）。0 なら何も出さない */
   readonly heatPenalty?: number;
-  /** 現在の熱が、未使用なら何ターンで1段軽くなるか。 */
-  readonly heatRecovery?: HeatRecoveryPreview;
   /** この手を選んだときの3結果。戦闘中だけ渡す。 */
   readonly outlook?: HandOutlook;
   /** この敵のこの手への耐性。1 なら何も出さない */
@@ -46,28 +44,26 @@ export function renderHandButton(options: HandButtonOptions): HTMLElement {
   const badges = document.createElement('div');
   badges.className = 'hand-button__badges';
 
-  // 熱で弱っていることが一目で分かるようにする。深いほど強く見せる（docs/03 節7）
+  // 連打で弱っていることが一目で分かるようにする。深いほど強く見せる（docs/03 節7）。
+  // 「溜まって冷める」ではなく「同じ手ばかり出している」ので、そう書く（ADR 0003）
   if (heatPenalty > 0) {
     button.classList.add('hand-button--heated');
 
     const heat = document.createElement('div');
     heat.className = 'hand-button__heat';
     heat.dataset['level'] = String(heatPenalty);
+
     const current = document.createElement('strong');
     current.className = 'hand-button__heat-current';
-    current.textContent = `現在 -${String(heatPenalty)}`;
+    current.textContent = `連打 -${String(heatPenalty)}`;
     heat.appendChild(current);
 
-    const recovery = options.heatRecovery;
-    if (recovery !== undefined && recovery.turnsUntilRelief > 0) {
-      const relief = document.createElement('span');
-      relief.className = 'hand-button__heat-relief';
-      relief.textContent =
-        recovery.penaltyAfterRelief === 0
-          ? `未使用 ${String(recovery.turnsUntilRelief)}Tで解除`
-          : `未使用 ${String(recovery.turnsUntilRelief)}Tで -${String(recovery.penaltyAfterRelief)}へ`;
-      heat.appendChild(relief);
-    }
+    // 直近の窓から外れれば戻るので、逃げ道を一言で出す
+    const relief = document.createElement('span');
+    relief.className = 'hand-button__heat-relief';
+    relief.textContent = '散らせば戻る';
+    heat.appendChild(relief);
+
     badges.appendChild(heat);
   }
 
