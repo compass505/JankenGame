@@ -1,7 +1,9 @@
 # 詳細設計
 
 > ステータス: **確定**（2026-08-09）。
-> **2026-08-10 追記**: 手の「熱」を追加（節2.5・節5）。`docs/adr/0002-hand-heat.md`。
+> **2026-08-10 追記**: 連打の罰を追加し、その後**方式を「熱」から「直近4手の窓」に変えた**
+> （節2.5・節5）。`docs/adr/0002-hand-heat.md` → `docs/adr/0003-repetition-window.md`。
+> あわせて強化の行き先を手ごとに変え（節2）、本気フェーズの強化を足した（節3・節5）。
 > **`domain/battle.ts` と `BattleState` は変更しない。**
 > **この文書は「読んで実装できる」粒度で書く。** `/test` はここからテストを書き、
 > `/impl` は Codex がここだけを見て実装する。曖昧な箇所を残さない。
@@ -70,79 +72,109 @@ export function canUpgrade(counts: UpgradeCounts, hand: Hand): boolean;
 /** 上限に達していたら counts をそのまま返す（例外を投げない） */
 export function applyUpgrade(counts: UpgradeCounts, hand: Hand): UpgradeCounts;
 
-/** 強化は damage にのみ加算する。heal と stareBonus は動かさない */
-export function buildHandTable(base: HandTable, counts: UpgradeCounts): HandTable;
+/** 強化1回がどこに乗るか。手ごとに違う（`docs/adr/0003-repetition-window.md`） */
+export type UpgradeTargets = Readonly<Record<Hand, 'damage' | 'stareBonus'>>;
+
+/** 強化を targets の指す側にだけ加算する。**heal は絶対に動かさない** */
+export function buildHandTableWith(
+  base: HandTable,
+  counts: UpgradeCounts,
+  targets: UpgradeTargets,
+): HandTable;
 ```
+
+> **`domain` に「グーはにらみが伸びる」と直書きしない。**
+> どの手がどこに乗るかは `src/data/hands.ts` の `UPGRADE_TARGETS` から渡す
+> （`CLAUDE.md` のレイヤ規約。`/balance` で行き先そのものを動かせる）。
 
 **不変条件**
 
 - `0 <= counts[hand] <= UPGRADE_MAX_PER_HAND`
-- `buildHandTable(base, counts)[h].damage === base[h].damage + counts[h]`
-- `buildHandTable(base, counts)[h].heal === base[h].heal`（**回復は絶対に強化されない**。
-  強化されると終了保証が壊れる。`docs/01_requirements.md`）
-- `buildHandTable(base, NO_UPGRADES)` は `base` と同じ値
+- `targets[h] === 'damage'` なら `damage` が `counts[h]` だけ増え、`stareBonus` は動かない
+- `targets[h] === 'stareBonus'` なら `stareBonus` が `counts[h]` だけ増え、`damage` は動かない
+- **`heal` はどちらの場合も動かない**（強化されると終了保証が壊れる。`docs/01_requirements.md`）
+- `buildHandTableWith(base, NO_UPGRADES, targets)` は `base` と同じ値
 
-**具体例**: `base.rock = { damage: 3, heal: 0, stareBonus: 3 }` に `counts.rock = 1` を渡すと
-`{ damage: 4, heal: 0, stareBonus: 3 }`。
+**具体例**
+
+```
+base.rock = { damage: 3, heal: 0, stareBonus: 4 }、targets.rock = 'stareBonus'
+  counts.rock = 1 → { damage: 3, heal: 0, stareBonus: 5 }
+
+base.paper = { damage: 3, heal: 3, stareBonus: 0 }、targets.paper = 'damage'
+  counts.paper = 1 → { damage: 4, heal: 3, stareBonus: 0 }
+```
+
+> **パーの強化は回復も解禁する。** `heal` は 3 のままだが、
+> 実際の回復は「与ダメージ − 1」で頭打ちになる（節4）。
+> 打点3のときは 2 止まりで、**1回強化して打点4になって初めて 3 が出る。**
 
 ---
 
-## 2.5. 手の「熱」（`src/domain/handTable.ts` に同居）
+## 2.5. 連打の罰（`src/domain/handTable.ts` に同居）
 
-`docs/adr/0002-hand-heat.md`。**同じ手を続けて出すと威力が下がり、使わなければ戻る。**
+`docs/adr/0003-repetition-window.md`。**同じ手ばかり出すと威力が下がる。散らせば下がらない。**
 
 ```ts
 import type { Hand } from '@/domain/hand';
 
-export type HeatCounts = Readonly<Record<Hand, number>>;
+/** 直近に出した手。新しいほど後ろ。長さは rule.window - 1 で頭打ち */
+export type HeatCounts = readonly Hand[];
 
 export interface HeatRule {
-  /** 熱がこの値たまるごとに弱化が1段深くなる */
-  readonly gain: number;
-  /** 弱化の上限 */
+  /** 数える窓の広さ（今回の手を含む） */
+  readonly window: number;
+  /** 窓の中で何回までなら罰なしか */
+  readonly allowed: number;
+  /** 弱化の上限。窓を広げたときに深くなりすぎないための蓋 */
   readonly maxPenalty: number;
 }
 
-export const NO_HEAT: HeatCounts; // { rock: 0, scissors: 0, paper: 0 }
+export const NO_HEAT: HeatCounts; // []
 
-/** 熱1つぶんの弱化の段数。**段数の式はここだけに置く** */
-export function heatPenalty(heat: number, rule: HeatRule): number;
+/** その手を「いま出したら」何段弱化するか。**段数の式はここだけに置く** */
+export function heatPenalty(history: HeatCounts, hand: Hand, rule: HeatRule): number;
 
-/** 熱による弱化を damage にだけ適用した表を返す */
-export function applyHeat(base: HandTable, heat: HeatCounts, rule: HeatRule): HandTable;
+/** 弱化を damage にだけ適用した表を返す */
+export function applyHeat(base: HandTable, history: HeatCounts, rule: HeatRule): HandTable;
 
-/** ターン終わりの更新。全部を1冷ましてから、出した手に rule.gain を足す */
-export function advanceHeat(heat: HeatCounts, used: Hand, rule: HeatRule): HeatCounts;
+/** ターン終わりの更新。履歴に1手足し、窓からはみ出した古い手を捨てる */
+export function advanceHeat(history: HeatCounts, used: Hand, rule: HeatRule): HeatCounts;
 ```
 
-> **数値を `HeatRule` で受け取る理由**（2026-08-10）。
-> `gain` と `maxPenalty` は**バランス調整で動かしたくなる数値**だが、
-> `domain/` は `src/data/` を import できない（`CLAUDE.md` のレイヤ規約）。
-> 定数として `domain/` に置くと `/balance` で触れなくなるので、**引数で受け取る。**
-> 実際の値は `src/data/heat.ts`（節6）にあり、**値そのものは ADR 0002 のまま**
-> （`gain: 4` / `maxPenalty: 3`）。置き場所を変えただけで決定は覆していない。
+> **型と関数の名前は `heat` のまま残してある。** 改名のコストが3日の規模に見合わないため
+> （ADR 0003）。**ただし「溜まって冷める」という説明はもう正しくない。**
+> 中身は「直近の履歴を数えるだけ」で、状態は履歴の配列1つ。
+> **画面の表示は「連打 -N」にする**（節7）。
+
+### `heatPenalty`
+
+```
+count = 1                       ← 今回出す1手を数に入れる
+history の中で hand と同じものを数えて count に足す
+penalty = min(rule.maxPenalty, max(0, count - rule.allowed))
+```
 
 ### `applyHeat`
 
 ```
-heatPenalty(h, rule) = min(rule.maxPenalty, floor(h / rule.gain))
-
 各手 h について:
-    damage = max(1, base[h].damage - heatPenalty(heat[h], rule))
+    damage = max(1, base[h].damage - heatPenalty(history, h, rule))
 heal と stareBonus は動かさない
 ```
 
-**段数の式を書き写さない。** `application` の `heatPenalties`（節5）も
-必ず `heatPenalty` を呼ぶ。同じ式が2箇所にあるとずれる（節4 の `dealtDamage` と同じ理由）。
+**段数の式を書き写さない。** `application` の `heatPenalties`（節5）も必ず `heatPenalty` を呼ぶ
+（節4 の `dealtDamage` と同じ理由）。
 
 ### `advanceHeat`
 
 ```
-各手 h について: next[h] = max(0, heat[h] - 1)
-そのあと next[used] += rule.gain
+next = [...history, used]
+末尾から rule.window - 1 個だけ残す
 ```
 
-**順序が重要。** 先に全部冷ましてから足す。逆にすると出した手が1ターンぶん軽く冷める。
+**`window - 1` を残す理由。** `heatPenalty` が「今回の手」を自分で1つ数えるので、
+履歴側は残り `window - 1` 手ぶんを覚えていればよい。
 
 **不変条件**
 
@@ -150,76 +182,38 @@ heal と stareBonus は動かさない
 - `applyHeat` は `heal` と `stareBonus` を変えない（**強化と同じく damage にしか触らない**）
 - `damage` は 1 未満にならない
 - 弱化量は `rule.maxPenalty` を超えない
-- `advanceHeat` は引数を書き換えず、新しいオブジェクトを返す
-- `heat[h] >= 0`
+- `advanceHeat` は引数を書き換えず、新しい配列を返す
+- `advanceHeat` の結果の長さは `rule.window - 1` 以下
 
-**具体例**
+### 具体例（`rule = { window: 4, allowed: 2, maxPenalty: 3 }`）
 
-```
-base.scissors = { damage: 5, heal: 0, stareBonus: 0 }
+出した順に見ていったときの弱化。**均等回しと2連続は罰なし、3連続から付く。**
 
-heat.scissors = 0  → penalty 0 → damage 5
-heat.scissors = 4  → penalty 1 → damage 4
-heat.scissors = 7  → penalty 1 → damage 4     （floor(7/4) = 1）
-heat.scissors = 13 → penalty 3 → damage 2     （floor(13/4) = 3）
-heat.scissors = 40 → penalty 3 → damage 2     （上限で止まる）
+| 出し方 | 各ターンの弱化 |
+| --- | --- |
+| 均等に回す グチパグチパグ | 0 0 0 0 0 0 0 |
+| 2連続を挟む ググチパググチ | 0 0 0 0 0 0 0 |
+| 3連続 ググ**グ**チパグ | 0 0 **-1** 0 0 0 |
+| 同じ手だけ ググ**ググググ** | 0 0 **-1 -2 -2 -2** |
+| 2手交互 グチグチグチ | 0 0 0 0 0 0 |
 
-advanceHeat({rock:0,scissors:4,paper:0}, 'scissors', rule) = {rock:0,scissors:7,paper:0}
-advanceHeat({rock:0,scissors:4,paper:0}, 'rock', rule)     = {rock:4,scissors:3,paper:0}
-```
-
-（上の数値はすべて `rule = { gain: 4, maxPenalty: 3 }` のとき）
-
-### 深めるのは速く、戻すのは遅い（実測・2026-08-10）
-
-**式からは読み取りにくいが、この非対称がこの機構の本体。** 熱は1ターンに1しか冷めず、
-1回使うと4たまるので、**焦がすのに使ったターン数の約4倍のターンが復帰に要る。**
-
-| 同じ手の連打 | 到達する熱 | そのときの弱化 | 弱化が消えるまで |
-| --- | --- | --- | --- |
-| 1回 | 4 | -1 | **1ターン** |
-| 2回 | 7 | -1 | 4ターン |
-| 3回 | 10 | -2 | 7ターン |
-| 4回 | 13 | -3 | 10ターン |
-| 5回 | 16 | -3 | **13ターン** |
-
-**1回使っただけの弱化は次のターンには消えている**ので、
-「1手空ける」だけで弱化は避けられる。逆に連打すると、戻すのに戦闘が終わってしまう。
-
-**戦闘の長さと比べたときの実感**（`/balance` 後・19,784戦の実測。
-1戦は中央値11ターン、平均11.6、上位25%が14ターン以上）。
-「連打したターン数 ＋ 冷ますターン数」がその戦闘に収まる割合で見る。
-
-| 連打 | 到達する弱化 | 戻りきるのに要る合計 | それが収まる戦闘 |
-| --- | --- | --- | --- |
-| 2回 | -1 | 6ターン | **96.6%** — 実質いつでも戻る |
-| 3回 | -2 | 10ターン | 64.4% — 3回に2回 |
-| 4回 | -3 | 14ターン | 30.7% — **戻らないほうが多い** |
-| 5回 | -3 | 18ターン | 8.9% — ほぼ戻らない |
-
-**線は「3連打までなら概ね戻る、4連打からは戻らないほうが多い」。**
-`/balance` で戦闘の長さを変えると**この線も動く**ので、
-熱の数値を触る前にここを測り直すこと（`scripts/measure.ts` と同じ手順で出せる）。
-
-**この2つは UI では説明していない**（画面に出しているのは現在の弱化量だけ）。
-プレイヤーには触って気づいてもらう前提であり、**説明を増やすより先に、
-弱化している手が一目で分かること**を優先する（節7）。
+**2手交互に罰が付かないのは承知のうえ。** ADR 0002 は「連続型」を
+「2手交互で素通りできる」として却下したが、本方式では**実測で機械的パターンの最良が
+9.9%** に留まり（貪欲プレイは 33.5%）、素通りにはなっていない。
 
 ### 熱・強化・耐性・にらみの適用順序
 
 **この順序を変えるとバランスの実測値と合わなくなる。**
 
 ```
-1. 強化を足す      buildHandTable(BASE_HANDS, upgrades)      … damage +1 ずつ
-2. 熱を引く        applyHeat(表, heat)                        … damage −penalty、最低1
-3. 耐性を掛ける    max(1, floor(damage × resistance))         … battle.ts が既にやっている
-4. にらみを足す    + stare × stareBonus                       … 耐性も熱も掛からない
+1. 強化を足す      buildHandTableWith(BASE_HANDS, upgrades, UPGRADE_TARGETS)
+2. 弱化を引く      applyHeat(表, 履歴, rule)                  … damage −penalty、最低1
+3. 耐性を掛ける    max(1, floor(damage × resistance))         … dealtDamage が行う
+4. にらみを足す    + stare × stareBonus                       … 耐性も弱化も掛からない
 ```
 
-1と2は `application` が組み立て、3と4は `resolveTurn` が行う。
+1と2は `application` が組み立て、3と4は `resolveTurn`（`dealtDamage`）が行う。
 **`domain/battle.ts` は変更しない。**
-
----
 
 ## 3. `src/domain/enemy.ts`
 
@@ -241,6 +235,8 @@ export interface EnemyDef {
   readonly weightsDesperate: HandWeights;
   /** プレイヤーの与ダメージ倍率。等倍は 1。3手すべてのキーを必ず持つ */
   readonly resistance: Readonly<Record<Hand, number>>;
+  /** 本気（desperate）のとき、敵の全手のダメージに足す量。0 なら強化なし */
+  readonly desperateBonus: number;
   readonly drawRule: DrawRule;
   /** 画面に出す偏りの説明。読み合いの材料は公開情報にする */
   readonly hint: string;
@@ -263,6 +259,10 @@ enemyHp * 2 <= enemyMaxHp  →  'desperate'
 
 **フェーズの切り替え条件はこれ1つだけ**（`docs/01_requirements.md`）。
 にらみはフェーズに影響しない。
+
+**`desperate` では敵の全手のダメージに `desperateBonus` を足す**
+（`docs/adr/0003-repetition-window.md`）。**掛けるのは `application`**（節5）で、
+`domain/enemy.ts` は値を持つだけ。**条件はフェーズ判定と同じ1つのまま**で増やさない。
 
 ### `handProbabilities`
 
@@ -695,27 +695,46 @@ result.state.outcome === 'playerLose' → phase 'result'、cleared = false
 
 ### `ctx` の組み立て
 
-**強化を足してから熱を引く**（節2.5 の適用順序）。
+**強化を足してから弱化を引く**（節2.5 の適用順序）。
 
 ```
-ctx = {
-  playerHands: applyHeat(buildHandTable(BASE_HANDS, state.upgrades), state.playerHeat),
-  enemyHands:  applyHeat(BASE_HANDS, state.enemyHeat),   // 敵は強化されないが熱は持つ
-  enemy:       STAGES[state.stageIndex],
-}
+playerHands = applyHeat(
+  buildHandTableWith(BASE_HANDS, state.upgrades, UPGRADE_TARGETS),
+  state.playerHeat,
+  HEAT_RULE,
+)
+enemyHands  = enemyHandTable(state, enemy, enemyPhase(battle.enemyHp, battle.enemyMaxHp))
+ctx = { playerHands, enemyHands, enemy: STAGES[state.stageIndex] }
 ```
 
-### 熱の更新
+**`playerHands` は `playerHandTable(state)` から取る。** 式を2箇所に持つと、
+片方だけ直したときに画面の数字と実ダメージがずれる。
+
+### 敵の手の表（`enemyHandTable`）
+
+**敵は強化されないが、弱化と本気の強化は持つ。** 唯一の出どころをここに置く。
+
+```
+表 = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE)
+phase === 'desperate' かつ enemy.desperateBonus > 0 なら
+    3手それぞれの damage に enemy.desperateBonus を足す
+```
+
+**`ctx.enemyHands` と `enemyForecast` の両方がこの関数を通ること。**
+片方だけ本気の強化を掛けると、**画面の「負けたら -N」が実ダメージと食い違う**
+（節4 の `dealtDamage` と同じ理由）。
+
+### 履歴の更新
 
 `resolveTurn` を呼んだあと、**両陣営ぶん**進める。敵が出した手は `result.log.enemyHand`。
 
 ```
-playerHeat = advanceHeat(state.playerHeat, hand)
-enemyHeat  = advanceHeat(state.enemyHeat, result.log.enemyHand)
+playerHeat = advanceHeat(state.playerHeat, hand, HEAT_RULE)
+enemyHeat  = advanceHeat(state.enemyHeat, result.log.enemyHand, HEAT_RULE)
 ```
 
 **決着したターンでも更新してよい**（次の戦闘の頭で `NO_HEAT` に戻るため影響しない）。
-**あいこのターンも更新する。** 手は出しているので熱はたまる。
+**あいこのターンも更新する。** 手は出しているので履歴には残る。
 
 `STAGES[i]` は `noUncheckedIndexedAccess` により `EnemyDef | undefined`。
 **未定義なら `state` をそのまま返す**（進行不能な状態を作らない）。
@@ -758,15 +777,17 @@ enemyHeat  = advanceHeat(state.enemyHeat, result.log.enemyHand)
 ```ts
 import type { HeatRule } from '@/domain/handTable';
 
-/** 熱の効き方。値は ADR 0002 のまま（置き場所だけ domain から移した） */
-export const HEAT_RULE: HeatRule = { gain: 4, maxPenalty: 3 };
+/** 連打の罰の効き方（`docs/adr/0003-repetition-window.md`）。
+ *  window=4 / allowed=2 のとき弱化は最大2段までしか届かない。
+ *  maxPenalty は窓を広げたときの蓋として置いてある */
+export const HEAT_RULE: HeatRule = { window: 4, allowed: 2, maxPenalty: 3 };
 ```
 
 ### `src/data/player.ts`
 
 ```ts
 /** プレイヤーの最大HP。5戦を通して増えない（回復は戦闘中のパーだけ） */
-export const PLAYER_MAX_HP = 18;
+export const PLAYER_MAX_HP = 25;
 ```
 
 > **`application` ではなくここに置く理由。** 敵HPを動かすとクリア率が動くので、
@@ -776,30 +797,46 @@ export const PLAYER_MAX_HP = 18;
 ### `src/data/hands.ts`
 
 ```ts
-import type { HandTable } from '@/domain/handTable';
+import type { HandTable, UpgradeTargets } from '@/domain/handTable';
 
 export const BASE_HANDS: HandTable = {
-  rock:     { damage: 3, heal: 0, stareBonus: 3 },
+  rock:     { damage: 3, heal: 0, stareBonus: 4 },
   scissors: { damage: 5, heal: 0, stareBonus: 0 },
-  paper:    { damage: 4, heal: 3, stareBonus: 0 },
+  paper:    { damage: 3, heal: 3, stareBonus: 0 },
+};
+
+/** 強化1回がどこに乗るか（`docs/adr/0003-repetition-window.md`） */
+export const UPGRADE_TARGETS: UpgradeTargets = {
+  rock: 'stareBonus',
+  scissors: 'damage',
+  paper: 'damage',
 };
 ```
 
-> **グーの `stareBonus` は 2→3、チョキの `damage` は 6→5**（`docs/adr/0002-hand-heat.md`）。
-> 熱の導入で手の価値の計算が変わったため、あわせて改定した。
-> **非対称の構造（グー=溜め／チョキ=火力／パー=回復）は変えていない。**
+> **グーの強化はにらみ倍率に乗る。** にらみはあいこを狙う読みでしか溜まらないので、
+> **グーの強化はまともに読んだプレイヤーにしか還元されない。**
+> 実測でも、これだけで機械的パターンの最良が 12.0% → 9.9% に落ちた（ADR 0003）。
+>
+> **パーの `heal` は 3 のまま。** 打点3のときは「与ダメージ − 1」で 2 止まりだが、
+> **1回強化して打点4になると 3 が出る。** 回復側に +1 を乗せているわけではないので、
+> 終了保証は壊れない（`docs/01_requirements.md`）。
+>
+> **非対称の構造（グー=溜め／チョキ=火力／パー=回復）は ADR 0001 から変えていない。**
 
 ### `src/data/enemies.ts`
 
 **ここの数値は `/balance` で動かす出発点。** ロジックは数値に依存しない。
 
-| # | id | 名前 | HP | normal（グー/チョキ/パー） | desperate | 耐性 | あいこ |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `scarecrow` | かかし | 16 | .34 / .33 / .33 | 同じ | なし | standard |
-| 2 | `rockGuard` | 岩の番人 | 18 | **.60** / .20 / .20 | .50 / .25 / .25 | なし | standard |
-| 3 | `shearBird` | はさみ鳥 | 18 | .20 / **.60** / .20 | .25 / .50 / .25 | なし | standard |
-| 4 | `paperEnvoy` | 紙の使者 | 21 | .20 / .20 / **.60** | .25 / .25 / .50 | チョキ ×0.5 | standard |
-| 5 | `glicoKing` | グリコ王 | 23 | .30 / .30 / .40 | .40 / .20 / .40 | チョキ ×0.5 | **stareDouble** |
+| # | id | 名前 | HP | normal（グー/チョキ/パー） | desperate | 耐性 | 本気強化 | あいこ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `scarecrow` | かかし | 18 | .34 / .33 / .33 | 同じ | なし | +1 | standard |
+| 2 | `rockGuard` | 岩の番人 | 21 | **.60** / .20 / .20 | .50 / .25 / .25 | なし | +1 | standard |
+| 3 | `shearBird` | はさみ鳥 | 21 | .20 / **.60** / .20 | .25 / .50 / .25 | なし | +1 | standard |
+| 4 | `paperEnvoy` | 紙の使者 | 24 | .20 / .20 / **.60** | .25 / .25 / .50 | チョキ ×0.5 | +1 | standard |
+| 5 | `glicoKing` | グリコ王 | 26 | .30 / .30 / .40 | .40 / .20 / .40 | チョキ ×0.5 | +1 | **stareDouble** |
+
+**本気強化（`desperateBonus`）は全敵一律 +1 から始める。** ボスだけ +2 にするなど、
+敵ごとに差をつける余地は残っている（ADR 0003 の積み残し）。
 
 `resistance` は**3手すべてのキーを必ず書く**（等倍は `1`）。
 
@@ -939,12 +976,14 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 | 勝ち | `onWin` ダメージ。`healOnWin > 0` なら回復も | `勝ち +5 / HP+3` |
 | あいこ | `stareOnDraw > 0` ならにらみ、そうでなければ `damageOnDraw` | `あいこ にらみ+1` |
 | 負け | `worstOnLose`（**最悪ケース**。平均にしない） | `負け -5` |
-| 熱 | `heatCost > 0` のときだけ | `使うと次から -1` |
+| 連打 | `heatCost > 0` のときだけ | `使うと次から -1` |
 
 - **にらみが上限のときは「あいこ」の行が `双方 -1` に変わる。** ここが読めないと、
   上限で粘る判断ができない
-- **既存の `-N 熱` バッジ（いまの弱化）と、`使うと次から -N`（これから増える弱化）は別物。**
+- **既存のバッジ（いまの弱化）と、`使うと次から -N`（これから増える弱化）は別物。**
   混ぜない。前者は現在の状態、後者はこの選択のコスト
+- **バッジの文言は `連打 -N` にする**（`-N 熱` から変更。ADR 0003）。
+  「溜まって冷める」ではなく「同じ手ばかり出している」ことが起きているので、そう書く
 - 耐性の `×0.5` は既存どおり残す
 - **4行が縦に伸びるので、狭い画面での折り返しを必ず確認する**（強化画面で一度踏んだ）
 
@@ -966,14 +1005,15 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 - **`docs/00_research.md` 節9.8 の制約は守る。** 背景も演出も
   **画面中央のにらみの表示を邪魔しない**
 
-### 熱が見えること（`docs/adr/0002-hand-heat.md`）
+### 連打の罰が見えること（`docs/adr/0003-repetition-window.md`）
 
 **`playerHandTable` は強化と熱を両方適用した表を返す**ので、ボタンの数字は自動的に下がる。
 ただし**なぜ下がったのかが分からないと理不尽になる**ので、次を満たす。
 
 - **弱化している手は、下がっていることが一目で分かる**（色を変える、`-1` を添える等）
 - 弱化量が深いほど強く見せる（`-1` / `-2` / `-3`）
-- **敵側の熱は画面に出さなくてよい。** 出す情報を増やすと画面が読めなくなる
+- **敵側の弱化は数値としては出さなくてよい。** ただし `enemyForecast` の
+  「負けたら -N」には反映される（画面に出る数字は必ず実値）
 
 ### `src/main.ts`
 
@@ -1005,7 +1045,7 @@ const rng = createRng(Date.now() >>> 0);
 
 1. `domain/handTable.ts` — `HeatCounts` / `applyHeat` / `advanceHeat` / 定数（節2.5）
 2. `data/hands.ts` — グーの `stareBonus` 3、チョキの `damage` 5
-3. `application/game.ts` — `GameState` に熱2つ、`ctx` の組み立て、熱の更新、リセット
+3. `application/game.ts` — `GameState` に履歴2つ、`ctx` の組み立て、`enemyHandTable`、履歴の更新、リセット
 4. `ui/screens/battle.ts` — 弱化が見えるようにする
 
 **`domain/battle.ts` は触らない。** 触る必要が出たら設計が間違っているので、
