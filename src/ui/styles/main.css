@@ -79,10 +79,65 @@ body {
   width: 100%;
 }
 
+.battle-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  /* 敵ごとの色。背景画像がまだ無い間はこれが舞台になり、
+     画像が入ったら上に重なる（docs/05_assets.md） */
+  background-color: var(--stage-tint, #28303d);
+  background-image:
+    linear-gradient(to bottom, #0b101022 40%, #0b1010bb 100%),
+    var(--battle-background, none),
+    radial-gradient(120% 80% at 50% 10%, #ffffff14, #0000 60%);
+  background-position: center;
+  background-size: cover;
+}
+
+.battle-stage[data-enemy='scarecrow'] {
+  --stage-tint: #2b3327;
+}
+
+.battle-stage[data-enemy='rockGuard'] {
+  --stage-tint: #33322c;
+}
+
+.battle-stage[data-enemy='shearBird'] {
+  --stage-tint: #26323b;
+}
+
+.battle-stage[data-enemy='paperEnvoy'] {
+  --stage-tint: #322a3b;
+}
+
+.battle-stage[data-enemy='glicoKing'] {
+  --stage-tint: #3b2a2a;
+}
+
+.battle-stage__nameplate {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #0b1010aa;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .enemy-panel__portrait {
   width: 240px;
   height: 240px;
+  max-width: 78%;
+  max-height: 94%;
   object-fit: contain;
+  z-index: 1;
 }
 
 .enemy-panel__portrait--boss {
@@ -90,14 +145,97 @@ body {
   height: 260px;
 }
 
-.enemy-panel__name {
-  font-weight: bold;
-  font-size: 1.1rem;
+/* 待機の微動。生きて見せるためだけのもので、目を引きに行かない */
+.enemy-panel__portrait {
+  animation: idle-bob 3.2s ease-in-out infinite;
 }
 
-.enemy-panel__hint {
-  opacity: 0.7;
-  font-size: 0.9rem;
+@keyframes idle-bob {
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* 殴られた／殴ったターンだけ反応する */
+.enemy-panel__portrait--hit {
+  animation: enemy-hit 0.36s ease both;
+}
+
+@keyframes enemy-hit {
+  0% {
+    transform: translateX(0);
+    filter: brightness(2.4);
+  }
+  25% {
+    transform: translateX(-9px) rotate(-3deg);
+  }
+  55% {
+    transform: translateX(7px) rotate(2deg);
+  }
+  100% {
+    transform: translateX(0);
+    filter: brightness(1);
+  }
+}
+
+.enemy-panel__portrait--attack {
+  animation: enemy-attack 0.34s ease both;
+}
+
+@keyframes enemy-attack {
+  40% {
+    transform: translateY(14px) scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enemy-panel__portrait,
+  .enemy-panel__portrait--hit,
+  .enemy-panel__portrait--attack,
+  .clash,
+  .clash__icon,
+  .damage-pop {
+    animation: none;
+  }
+}
+
+/* ダメージの数字。HPバーの変化だけだと何が起きたか読み取れない */
+.damage-pop {
+  position: absolute;
+  left: 50%;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--danger);
+  text-shadow: 0 2px 0 #0b1010;
+  pointer-events: none;
+  animation: damage-pop 0.7s ease-out both;
+}
+
+.damage-pop--heal {
+  color: var(--success);
+}
+
+.damage-pop--enemy {
+  top: 18%;
+}
+
+.damage-pop--player {
+  top: -6px;
+}
+
+@keyframes damage-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.7);
+  }
+  25% {
+    opacity: 1;
+    transform: translate(-50%, -6px) scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -26px) scale(1);
+  }
 }
 
 /* HPバー */
@@ -161,30 +299,203 @@ body {
   }
 }
 
-/* 直前の結果 */
+/* 直前の手合わせ。両者の手を並べて出す（docs/03 節7） */
 
-.turn-log {
+.clash {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--panel);
   border: 1px solid var(--panel-border);
+  animation: clash-in 0.28s ease both;
 }
 
-.turn-log__outcome {
+@keyframes clash-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.clash--win {
+  border-color: #5fbf7066;
+}
+
+.clash--lose {
+  border-color: #e05a4f66;
+}
+
+.clash__side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.clash__icon {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  animation: clash-enter 0.28s cubic-bezier(0.2, 1.4, 0.5, 1) both;
+}
+
+.clash__side--mine .clash__icon {
+  --from-x: -18px;
+}
+
+.clash__side--theirs .clash__icon {
+  --from-x: 18px;
+}
+
+@keyframes clash-enter {
+  from {
+    opacity: 0;
+    transform: translateX(var(--from-x, 0)) scale(0.7);
+  }
+}
+
+.clash__who {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.clash__center {
+  min-width: 6.5em;
+}
+
+.clash__outcome {
   font-weight: bold;
+  font-size: 1.1rem;
 }
 
-.turn-log__detail {
-  font-size: 0.85rem;
+.clash--win .clash__outcome {
+  color: var(--success);
+}
+
+.clash--lose .clash__outcome {
+  color: var(--danger);
+}
+
+.clash--draw .clash__outcome {
+  color: var(--accent);
+}
+
+.clash__detail {
+  font-size: 0.75rem;
   opacity: 0.8;
   min-height: 1em;
+}
+
+/* 敵の手の予報。読み合いの材料を数字で出す（docs/03 節7） */
+
+.forecast {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.forecast--desperate {
+  border-color: #e05a4f88;
+}
+
+.forecast__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.forecast__title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.forecast__phase {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.forecast--desperate .forecast__phase {
+  color: var(--danger);
+  opacity: 1;
+}
+
+.forecast__row {
+  display: grid;
+  grid-template-columns: 24px 3em 1fr 2.6em auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.forecast__icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.forecast__name {
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.forecast__track {
+  height: 8px;
+  border-radius: 999px;
+  background: #00000055;
+  overflow: hidden;
+}
+
+.forecast__fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.forecast__percent {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.forecast__damage {
+  font-size: 0.75rem;
+  color: var(--danger);
+  white-space: nowrap;
 }
 
 /* 自分パネル */
 
 .player-panel {
+  position: relative;
   width: 100%;
+}
+
+.player-panel--hit {
+  animation: player-hit 0.32s ease both;
+}
+
+@keyframes player-hit {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(-6px);
+  }
+  65% {
+    transform: translateX(4px);
+  }
 }
 
 /* 手のボタン列 */
@@ -273,4 +584,27 @@ body {
   color: var(--bg);
   background: var(--danger);
   box-shadow: 0 0 0 2px #e05a4f66;
+}
+
+.hand-button__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* 耐性。与ダメージに効くものなので与ダメージの隣に置く（docs/03 節7） */
+.hand-button__resist {
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #9fb6d0;
+  background: #9fb6d022;
+  white-space: nowrap;
+}
+
+.hand-button--resisted {
+  border-style: dashed;
 }
