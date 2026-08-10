@@ -137,6 +137,10 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
 
   // ---- 敵の戦術とにらみ（読み合いの材料）
 
+  if (state.stageIndex === 0 && log === null) {
+    el.appendChild(renderHandRoleGuide());
+  }
+
   const intel = document.createElement('div');
   intel.className = 'battle-intel';
   if (forecast !== null) {
@@ -144,10 +148,6 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
   }
   intel.appendChild(renderStareDisplay(battle.stare, stareJustIncreased));
   el.appendChild(intel);
-
-  if (state.stageIndex === 0 && log === null) {
-    el.appendChild(renderHandRoleGuide());
-  }
 
   // ---- 自分
 

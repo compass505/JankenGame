@@ -40,7 +40,7 @@ body {
 .screen--battle {
   width: 100%;
   gap: 10px;
-  padding-bottom: 196px;
+  padding-bottom: 244px;
 }
 
 /* 5連戦の現在地。ボスまでの距離を常に短い面積で見せる */
@@ -756,7 +756,9 @@ body {
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 5 / 3;
+  /* 上は敵名、下はHPの専用領域。中央だけを立ち絵に使い、文字と重ねない */
+  padding: 54px 18px 46px;
   overflow: hidden;
   border: 1px solid var(--panel-border);
   border-radius: 12px;
@@ -801,10 +803,11 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-height: 36px;
   padding: 7px 9px 7px 11px;
   border: 1px solid #ffffff1f;
   border-radius: 10px;
-  background: linear-gradient(90deg, #080b10e8, #111722c9 72%, #080b10e8);
+  background: linear-gradient(90deg, #080b10f5, #111722ed 72%, #080b10f5);
   box-shadow: 0 4px 18px #00000066;
   backdrop-filter: blur(4px);
 }
@@ -853,10 +856,13 @@ body {
 }
 
 .enemy-panel__portrait {
-  width: 240px;
-  height: 240px;
-  max-width: 78%;
-  max-height: 88%;
+  position: absolute;
+  top: 54px;
+  left: 18px;
+  width: calc(100% - 36px);
+  height: calc(100% - 100px);
+  max-width: none;
+  max-height: none;
   object-fit: contain;
   z-index: 1;
 }
@@ -867,17 +873,22 @@ body {
   right: 12px;
   bottom: 10px;
   left: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
   width: auto;
-  padding: 7px 10px 8px;
+  min-height: 32px;
+  padding: 5px 9px;
   border: 1px solid #ffffff1a;
   border-radius: 9px;
-  background: #080b10dc;
+  background: #080b10f3;
   box-shadow: 0 4px 18px #00000066;
   backdrop-filter: blur(4px);
 }
 
 .hp-bar--enemy .hp-bar__label {
-  margin-bottom: 3px;
+  margin-bottom: 0;
   color: #f2e8dc;
   font-size: 0.72rem;
   font-weight: 700;
@@ -893,11 +904,6 @@ body {
 .hp-bar--enemy .hp-bar__fill {
   background: linear-gradient(90deg, #c73f38, #ef6b50 72%, #ffc08c);
   box-shadow: 0 0 8px #e05a4f88;
-}
-
-.enemy-panel__portrait--boss {
-  width: 260px;
-  height: 260px;
 }
 
 .battle-effect {
@@ -976,7 +982,8 @@ body {
 
 @keyframes enemy-attack {
   40% {
-    transform: translateY(14px) scale(1.06);
+    filter: brightness(1.16);
+    transform: scale(1.04);
   }
 }
 
@@ -1463,6 +1470,9 @@ body {
   .janken-presentation__duel,
   .janken-presentation__hand,
   .janken-presentation__impact,
+  .janken-presentation__burst,
+  .janken-presentation__result,
+  .janken-presentation__hand--winner .janken-presentation__icon,
   .phase-shift,
   .phase-shift::before,
   .phase-shift::after,
@@ -1485,7 +1495,12 @@ body {
     display: none;
   }
 
-  .janken-presentation__duel {
+  .janken-presentation__burst {
+    display: none;
+  }
+
+  .janken-presentation__duel,
+  .janken-presentation__result {
     opacity: 1;
   }
 }
@@ -1872,21 +1887,6 @@ body {
   white-space: nowrap;
 }
 
-.forecast__phase {
-  flex: none;
-  padding: 2px 6px;
-  border-radius: 999px;
-  color: #aeb8c6;
-  background: #ffffff0d;
-  font-size: 0.58rem;
-  font-weight: 800;
-}
-
-.forecast--desperate .forecast__phase {
-  color: var(--danger);
-  opacity: 1;
-}
-
 .forecast__ability {
   display: flex;
   align-items: baseline;
@@ -1910,64 +1910,6 @@ body {
   min-width: 0;
   font-size: 0.64rem;
   line-height: 1.25;
-}
-
-.forecast__phase-route {
-  padding: 6px 7px;
-  border: 1px solid #e0b04033;
-  border-radius: 8px;
-  background: linear-gradient(90deg, #e0b04010, #0000);
-}
-
-.forecast__phase-route--active {
-  border-color: #e05a4f66;
-  background: linear-gradient(90deg, #e05a4f18, #0000);
-}
-
-.forecast__phase-route-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 4px;
-  text-align: left;
-}
-
-.forecast__phase-route-heading strong {
-  color: #e8c76f;
-  font-size: 0.64rem;
-}
-
-.forecast__phase-route--active .forecast__phase-route-heading strong {
-  color: #ff8d82;
-}
-
-.forecast__phase-route-heading span {
-  color: #9ca5b3;
-  font-size: 0.52rem;
-  font-weight: 700;
-}
-
-.forecast__phase-changes {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-}
-
-.forecast__phase-change,
-.forecast__phase-unchanged {
-  padding: 2px 4px;
-  border-radius: 4px;
-  background: #080b104d;
-  font-size: 0.53rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.forecast__phase-unchanged {
-  display: block;
-  color: #adb5c0;
-  text-align: left;
 }
 
 .forecast__rows {
@@ -2021,58 +1963,6 @@ body {
   font-size: 0.6rem;
   color: #e79389;
   white-space: nowrap;
-}
-
-.forecast__heat {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding-top: 5px;
-  border-top: 1px solid #ffffff12;
-}
-
-.forecast__heat-label {
-  flex: none;
-  color: #9ca5b3;
-  font-size: 0.54rem;
-  font-weight: 800;
-}
-
-.forecast__heat-states {
-  display: flex;
-  min-width: 0;
-  gap: 3px;
-}
-
-.forecast__heat-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px 4px;
-  border-radius: 999px;
-  color: #aeb8c6;
-  background: #ffffff0a;
-  font-size: 0.5rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.forecast__heat-state[data-level='1'] {
-  color: #efbd73;
-  background: #e0b04018;
-}
-
-.forecast__heat-state[data-level='2'],
-.forecast__heat-state[data-level='3'] {
-  color: #ff9b90;
-  background: #e05a4f1f;
-}
-
-.forecast__heat-icon {
-  width: 12px;
-  height: 12px;
-  object-fit: contain;
 }
 
 /* 初戦だけ出す、3手の役割の短い導入 */
@@ -2359,14 +2249,7 @@ body {
 
   .screen--battle {
     gap: 8px;
-  }
-
-  .battle-stage {
-    aspect-ratio: 1.92 / 1;
-  }
-
-  .enemy-panel__portrait {
-    max-height: 86%;
+    padding-bottom: 244px;
   }
 
   .clash {
@@ -2393,21 +2276,12 @@ body {
     padding: 8px;
   }
 
-  .forecast__ability,
-  .forecast__phase-route {
+  .forecast__ability {
     padding-block: 3px;
-  }
-
-  .forecast__phase-route-heading {
-    margin-bottom: 2px;
   }
 
   .forecast__rows {
     gap: 1px;
-  }
-
-  .forecast__heat {
-    padding-top: 2px;
   }
 
   .stare-display {
