@@ -4,6 +4,7 @@ import {
   STARE_MAX,
   STARE_MAX_DRAW_DAMAGE,
   createBattle,
+  dealtDamage,
   resolveTurn,
 } from '@/domain/battle';
 import type { BattleContext, BattleState, TurnResult } from '@/domain/battle';
@@ -493,5 +494,84 @@ describe('再現性', () => {
     };
 
     expect(run()).toEqual(run());
+  });
+});
+
+// ── dealtDamage（docs/03 節4） ───────────────────────────────────
+//
+// 「耐性0.5の敵に対してボタンが『6ダメージ』と表示して実際は3しか入らない」
+// というずれ（節4「`dealtDamage` だけを関数に切り出す理由」）を二度と作らないためのテスト。
+
+describe('dealtDamage', () => {
+  it('耐性が1のとき damage + stare * stareBonus になる', () => {
+    const v: HandValue = { damage: 5, heal: 0, stareBonus: 3 };
+
+    expect(dealtDamage(v, 1, 2)).toBe(5 + 2 * 3);
+  });
+
+  it('耐性は damage にだけ掛かり、にらみのぶんには掛からない', () => {
+    const v: HandValue = { damage: 4, heal: 0, stareBonus: 2 };
+
+    // 耐性0.5: floor(4 * 0.5) = 2 に、耐性の掛からない stare*stareBonus (2*2=4) を足す
+    expect(dealtDamage(v, 0.5, 2)).toBe(2 + 2 * 2);
+  });
+
+  it('耐性を掛けた結果は Math.floor される', () => {
+    const v: HandValue = { damage: 5, heal: 0, stareBonus: 0 };
+
+    // floor(5 * 0.5) = 2（切り捨てなければ 2.5 になってしまう）
+    expect(dealtDamage(v, 0.5, 0)).toBe(2);
+  });
+
+  it('耐性でダメージが0以下になっても1で止まる', () => {
+    const v: HandValue = { damage: 1, heal: 0, stareBonus: 0 };
+
+    // floor(1 * 0.1) = 0 → max(1, 0) で1に戻る
+    expect(dealtDamage(v, 0.1, 0)).toBe(1);
+  });
+
+  it('stare が0のときは耐性を適用した damage のみになる', () => {
+    const v: HandValue = { damage: 5, heal: 0, stareBonus: 3 };
+
+    expect(dealtDamage(v, 1, 0)).toBe(5);
+  });
+});
+
+// ── resolveTurn の damageToEnemy は dealtDamage と一致する（docs/03 節4 具体例1〜3） ──
+
+describe('resolveTurn の damageToEnemy は dealtDamage と一致する', () => {
+  it('例1: にらみを乗せてグーで勝つ', () => {
+    const s = state({ playerHp: 15, playerMaxHp: 15, enemyHp: 12, enemyMaxHp: 12, stare: 2, turn: 5 });
+    const value: HandValue = { damage: 3, heal: 0, stareBonus: 2 };
+    const ctx = ctxForcingEnemyHand('scissors', { playerHands: handTable({ rock: value }) });
+
+    const result = resolveTurn(s, 'rock', ctx, RNG_FOR_FORCED_HAND);
+
+    expect(result.log.damageToEnemy).toBe(dealtDamage(value, ctx.enemy.resistance.rock, s.stare));
+  });
+
+  it('例2: パーで勝つ（耐性1）', () => {
+    const s = state({ playerHp: 10, playerMaxHp: 15, enemyHp: 12, enemyMaxHp: 12, stare: 0, turn: 0 });
+    const value: HandValue = { damage: 4, heal: 3, stareBonus: 0 };
+    const ctx = ctxForcingEnemyHand('rock', { playerHands: handTable({ paper: value }) });
+
+    const result = resolveTurn(s, 'paper', ctx, RNG_FOR_FORCED_HAND);
+
+    expect(result.log.damageToEnemy).toBe(dealtDamage(value, ctx.enemy.resistance.paper, s.stare));
+  });
+
+  it('例3: パーで勝つ（耐性0.5の敵）', () => {
+    const s = state({ playerHp: 10, playerMaxHp: 15, enemyHp: 12, enemyMaxHp: 12, stare: 0, turn: 0 });
+    const value: HandValue = { damage: 4, heal: 3, stareBonus: 0 };
+    const ctx = ctxForcingEnemyHand('rock', {
+      playerHands: handTable({ paper: value }),
+      enemyOverrides: { resistance: { rock: 1, scissors: 1, paper: 0.5 } },
+    });
+
+    const result = resolveTurn(s, 'paper', ctx, RNG_FOR_FORCED_HAND);
+
+    expect(result.log.damageToEnemy).toBe(dealtDamage(value, ctx.enemy.resistance.paper, s.stare));
+    // 節4の具体例3そのもの。耐性適用後の値がずれていないことも直接確かめる
+    expect(result.log.damageToEnemy).toBe(2);
   });
 });
