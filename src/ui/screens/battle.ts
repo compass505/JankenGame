@@ -1,9 +1,18 @@
-import { currentEnemy, damagePreview, enemyForecast, heatPenalties } from '@/application/game';
+import {
+  currentEnemy,
+  enemyForecast,
+  handOutlook,
+  heatPenalties,
+  heatRecoveryPreview,
+} from '@/application/game';
 import type { GameState } from '@/application/game';
+import { STAGES } from '@/data/stages';
 import { HANDS } from '@/domain/hand';
+import type { Hand } from '@/domain/hand';
 import { renderEnemyForecast } from '@/ui/components/enemyForecast';
 import { renderHandButton } from '@/ui/components/handButton';
 import { renderHandClash } from '@/ui/components/handClash';
+import { HAND_LABEL, renderHandIcon } from '@/ui/components/handIcon';
 import { renderHpBar } from '@/ui/components/hpBar';
 import { renderStareDisplay } from '@/ui/components/stareDisplay';
 import type { Actions } from '@/ui/app';
@@ -14,6 +23,12 @@ const BATTLE_BACKGROUND_BY_ENEMY_ID: Readonly<Record<string, string>> = {
   shearBird: '/assets/battle-bg-shearBird.png',
   paperEnvoy: '/assets/battle-bg-paperEnvoy.png',
   glicoKing: '/assets/battle-bg-glicoKing.png',
+};
+
+const HAND_ROLE: Readonly<Record<Hand, string>> = {
+  rock: 'にらみで大技',
+  scissors: '高い攻撃力',
+  paper: '勝つと回復',
 };
 
 export function renderBattle(state: GameState, actions: Actions): HTMLElement {
@@ -28,6 +43,10 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
   }
 
   const log = state.lastLog;
+  const forecast = enemyForecast(state);
+  const stareJustIncreased = log !== null && log.stareAfter > log.stareBefore;
+
+  el.appendChild(renderStageProgress(state.stageIndex));
 
   // ---- 敵と舞台
 
@@ -64,10 +83,31 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
     stage.appendChild(renderBattleEffect('heal'));
   }
 
-  const nameplate = document.createElement('div');
-  nameplate.className = 'battle-stage__nameplate';
-  nameplate.textContent = enemy.name;
-  stage.appendChild(nameplate);
+  const enemyHeader = document.createElement('div');
+  enemyHeader.className = 'battle-stage__header';
+
+  const enemyHeading = document.createElement('div');
+  enemyHeading.className = 'battle-stage__heading';
+  const stageLabel = document.createElement('span');
+  stageLabel.className = 'battle-stage__stage-label';
+  stageLabel.textContent = `第${String(state.stageIndex + 1)}戦`;
+  enemyHeading.appendChild(stageLabel);
+  const enemyName = document.createElement('strong');
+  enemyName.className = 'battle-stage__enemy-name';
+  enemyName.textContent = enemy.name;
+  enemyHeading.appendChild(enemyName);
+  enemyHeader.appendChild(enemyHeading);
+
+  const phaseBadge = document.createElement('span');
+  phaseBadge.className = 'battle-stage__phase';
+  if (forecast?.phase === 'desperate') {
+    phaseBadge.classList.add('battle-stage__phase--desperate');
+    phaseBadge.textContent = '本気';
+  } else {
+    phaseBadge.textContent = '通常';
+  }
+  enemyHeader.appendChild(phaseBadge);
+  stage.appendChild(enemyHeader);
 
   if (log !== null && log.damageToEnemy > 0) {
     const pop = document.createElement('div');
@@ -82,29 +122,38 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
     stage.appendChild(pop);
   }
 
+  const enemyHp = renderHpBar('敵HP', battle.enemyHp, battle.enemyMaxHp);
+  enemyHp.classList.add('hp-bar--enemy');
+  stage.appendChild(enemyHp);
+
   enemyPanel.appendChild(stage);
-  enemyPanel.appendChild(renderHpBar('敵', battle.enemyHp, battle.enemyMaxHp));
   el.appendChild(enemyPanel);
 
-  // ---- 敵の手の予報（読み合いの材料）
-
-  const forecast = enemyForecast(state);
-  if (forecast !== null) {
-    el.appendChild(renderEnemyForecast(forecast, enemy));
-  }
-
-  // ---- にらみ
-
-  const stareJustIncreased = log !== null && log.stareAfter > log.stareBefore;
-  el.appendChild(renderStareDisplay(battle.stare, stareJustIncreased));
-
-  // ---- 直前の手合わせ
+  // ---- 直前の手合わせ。発生したターンだけ舞台の直下へ出す
 
   if (log !== null) {
     el.appendChild(renderHandClash(log));
   }
 
+  // ---- 敵の戦術とにらみ（読み合いの材料）
+
+  const intel = document.createElement('div');
+  intel.className = 'battle-intel';
+  if (forecast !== null) {
+    intel.appendChild(renderEnemyForecast(forecast, enemy));
+  }
+  intel.appendChild(renderStareDisplay(battle.stare, stareJustIncreased));
+  el.appendChild(intel);
+
+  if (state.stageIndex === 0 && log === null) {
+    el.appendChild(renderHandRoleGuide());
+  }
+
   // ---- 自分
+
+  const controls = document.createElement('section');
+  controls.className = 'battle-controls';
+  controls.setAttribute('aria-label', '自分の状態と手の選択');
 
   const playerPanel = document.createElement('div');
   playerPanel.className = 'player-panel';
@@ -132,7 +181,7 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
     playerPanel.appendChild(pop);
   }
 
-  el.appendChild(playerPanel);
+  controls.appendChild(playerPanel);
 
   // ---- 手のボタン
 
@@ -144,8 +193,9 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
     handRow.appendChild(
       renderHandButton({
         hand,
-        damagePreview: damagePreview(state, hand),
         heatPenalty: penalties[hand],
+        heatRecovery: heatRecoveryPreview(state, hand),
+        outlook: handOutlook(state, hand) ?? undefined,
         resistance: enemy.resistance[hand],
         onClick: () => {
           actions.onPlayHand(hand);
@@ -154,9 +204,70 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
     );
   }
 
-  el.appendChild(handRow);
+  controls.appendChild(handRow);
+  el.appendChild(controls);
 
   return el;
+}
+
+function renderStageProgress(stageIndex: number): HTMLElement {
+  const progress = document.createElement('nav');
+  progress.className = 'stage-progress';
+  progress.setAttribute('aria-label', `全${String(STAGES.length)}戦中、第${String(stageIndex + 1)}戦`);
+
+  const count = document.createElement('strong');
+  count.className = 'stage-progress__count';
+  count.textContent = `BATTLE ${String(stageIndex + 1)} / ${String(STAGES.length)}`;
+  progress.appendChild(count);
+
+  const route = document.createElement('div');
+  route.className = 'stage-progress__route';
+  for (const [index, stage] of STAGES.entries()) {
+    const step = document.createElement('span');
+    step.className = 'stage-progress__step';
+    if (index < stageIndex) {
+      step.classList.add('stage-progress__step--complete');
+    } else if (index === stageIndex) {
+      step.classList.add('stage-progress__step--current');
+    }
+    if (index === STAGES.length - 1) {
+      step.classList.add('stage-progress__step--boss');
+    }
+    step.title = `第${String(index + 1)}戦 ${stage.name}`;
+    step.setAttribute('aria-label', step.title);
+    route.appendChild(step);
+  }
+  progress.appendChild(route);
+  return progress;
+}
+
+function renderHandRoleGuide(): HTMLElement {
+  const guide = document.createElement('section');
+  guide.className = 'hand-role-guide';
+  guide.setAttribute('aria-label', '3つの手の役割');
+
+  const heading = document.createElement('strong');
+  heading.className = 'hand-role-guide__heading';
+  heading.textContent = '3つの手は、勝ったときの強みが違う';
+  guide.appendChild(heading);
+
+  const roles = document.createElement('div');
+  roles.className = 'hand-role-guide__roles';
+  for (const hand of HANDS) {
+    const role = document.createElement('div');
+    role.className = 'hand-role-guide__role';
+    role.appendChild(renderHandIcon(hand, 'hand-role-guide__icon'));
+
+    const copy = document.createElement('span');
+    const label = document.createElement('strong');
+    label.textContent = HAND_LABEL[hand];
+    copy.appendChild(label);
+    copy.append(` ${HAND_ROLE[hand]}`);
+    role.appendChild(copy);
+    roles.appendChild(role);
+  }
+  guide.appendChild(roles);
+  return guide;
 }
 
 function renderBattleEffect(kind: 'hit' | 'heal'): HTMLImageElement {

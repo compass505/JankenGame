@@ -3,9 +3,15 @@ import type { Outcome } from '@/domain/hand';
 import { renderHandIcon } from '@/ui/components/handIcon';
 
 const OUTCOME_TEXT: Readonly<Record<Outcome, string>> = {
-  win: '勝ち',
-  lose: '負け',
+  win: 'あなたの勝ち！',
+  lose: 'あなたの負け…',
   draw: 'あいこ',
+};
+
+const OUTCOME_MARK: Readonly<Record<Outcome, string>> = {
+  win: 'WIN',
+  lose: 'LOSE',
+  draw: 'DRAW',
 };
 
 /**
@@ -16,46 +22,82 @@ export function renderHandClash(log: TurnLog): HTMLElement {
   const el = document.createElement('div');
   el.className = `clash clash--${log.outcome}`;
 
+  const banner = document.createElement('div');
+  banner.className = 'clash__banner';
+  const mark = document.createElement('span');
+  mark.className = 'clash__mark';
+  mark.textContent = OUTCOME_MARK[log.outcome];
+  banner.appendChild(mark);
+  const outcome = document.createElement('strong');
+  outcome.className = 'clash__outcome';
+  outcome.textContent = OUTCOME_TEXT[log.outcome];
+  banner.appendChild(outcome);
+  el.appendChild(banner);
+
+  const arena = document.createElement('div');
+  arena.className = 'clash__arena';
+
   const mine = document.createElement('div');
   mine.className = 'clash__side clash__side--mine';
-  mine.appendChild(renderHandIcon(log.playerHand, 'clash__icon'));
   const mineLabel = document.createElement('span');
   mineLabel.className = 'clash__who';
   mineLabel.textContent = 'じぶん';
   mine.appendChild(mineLabel);
-  el.appendChild(mine);
+  mine.appendChild(renderHandIcon(log.playerHand, 'clash__icon'));
+  arena.appendChild(mine);
 
   const center = document.createElement('div');
   center.className = 'clash__center';
-
-  const outcome = document.createElement('div');
-  outcome.className = 'clash__outcome';
-  outcome.textContent = OUTCOME_TEXT[log.outcome];
-  center.appendChild(outcome);
-
-  const detail = document.createElement('div');
-  detail.className = 'clash__detail';
-  const parts: string[] = [];
-  if (log.damageToEnemy > 0) parts.push(`敵に ${String(log.damageToEnemy)}`);
-  if (log.damageToPlayer > 0) parts.push(`自分に ${String(log.damageToPlayer)}`);
-  if (log.healToPlayer > 0) parts.push(`自分 +${String(log.healToPlayer)} 回復`);
-  if (log.healToEnemy > 0) parts.push(`敵 +${String(log.healToEnemy)} 回復`);
-  if (parts.length === 0 && log.stareAfter > log.stareBefore) {
-    parts.push(`にらみ +${String(log.stareAfter - log.stareBefore)}`);
-  }
-  detail.textContent = parts.join(' / ');
-  center.appendChild(detail);
-
-  el.appendChild(center);
+  center.textContent = 'VS';
+  arena.appendChild(center);
 
   const theirs = document.createElement('div');
   theirs.className = 'clash__side clash__side--theirs';
-  theirs.appendChild(renderHandIcon(log.enemyHand, 'clash__icon'));
   const theirsLabel = document.createElement('span');
   theirsLabel.className = 'clash__who';
   theirsLabel.textContent = 'あいて';
   theirs.appendChild(theirsLabel);
-  el.appendChild(theirs);
+  theirs.appendChild(renderHandIcon(log.enemyHand, 'clash__icon'));
+  arena.appendChild(theirs);
+  el.appendChild(arena);
+
+  const summary = document.createElement('div');
+  summary.className = 'clash__summary';
+  if (log.damageToEnemy > 0) {
+    summary.appendChild(renderResultChip('damage', '敵へ', `${String(log.damageToEnemy)} ダメージ`));
+  }
+  if (log.damageToPlayer > 0) {
+    summary.appendChild(renderResultChip('damage', '自分へ', `${String(log.damageToPlayer)} ダメージ`));
+  }
+  if (log.healToPlayer > 0) {
+    summary.appendChild(renderResultChip('heal', '自分', `HP +${String(log.healToPlayer)}`));
+  }
+  if (log.healToEnemy > 0) {
+    summary.appendChild(renderResultChip('heal', '敵', `HP +${String(log.healToEnemy)}`));
+  }
+  if (log.stareAfter > log.stareBefore) {
+    summary.appendChild(
+      renderResultChip('stare', 'にらみ', `+${String(log.stareAfter - log.stareBefore)}`),
+    );
+  }
+  el.appendChild(summary);
 
   return el;
+}
+
+function renderResultChip(kind: 'damage' | 'heal' | 'stare', label: string, value: string): HTMLElement {
+  const chip = document.createElement('span');
+  chip.className = `clash__chip clash__chip--${kind}`;
+
+  const chipLabel = document.createElement('span');
+  chipLabel.className = 'clash__chip-label';
+  chipLabel.textContent = label;
+  chip.appendChild(chipLabel);
+
+  const chipValue = document.createElement('strong');
+  chipValue.className = 'clash__chip-value';
+  chipValue.textContent = value;
+  chip.appendChild(chipValue);
+
+  return chip;
 }

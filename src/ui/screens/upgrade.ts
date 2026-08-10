@@ -1,10 +1,11 @@
-import { upgradePreview } from '@/application/game';
+import { currentEnemy, upgradePreview } from '@/application/game';
 import type { GameState } from '@/application/game';
 import { HANDS } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
 import type { HandValue } from '@/domain/handTable';
 import { canUpgrade } from '@/domain/handTable';
 import { renderHandButton } from '@/ui/components/handButton';
+import { renderEnemyDefeat } from '@/ui/components/enemyDefeat';
 import type { Actions } from '@/ui/app';
 
 /**
@@ -20,6 +21,12 @@ function traitOf(value: HandValue): string | null {
 export function renderUpgrade(state: GameState, actions: Actions): HTMLElement {
   const el = document.createElement('main');
   el.className = 'screen screen--upgrade';
+
+  const defeatedEnemy = currentEnemy(state);
+  if (defeatedEnemy !== null && state.battle?.outcome === 'playerWin') {
+    el.classList.add('screen--after-win');
+    el.appendChild(renderEnemyDefeat(defeatedEnemy, state.lastLog?.damageToEnemy ?? 0, false));
+  }
 
   const title = document.createElement('h1');
   title.className = 'screen__title';

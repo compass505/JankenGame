@@ -1,7 +1,15 @@
-import { createBattle, dealtDamage, resolveTurn } from '@/domain/battle';
+import {
+  STARE_GAIN,
+  STARE_MAX,
+  STARE_MAX_DRAW_DAMAGE,
+  createBattle,
+  dealtDamage,
+  resolveTurn,
+} from '@/domain/battle';
 import type { BattleState, TurnLog } from '@/domain/battle';
 import { enemyPhase, handProbabilities } from '@/domain/enemy';
 import type { EnemyDef, EnemyPhase } from '@/domain/enemy';
+import { HANDS, judge } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
 import {
   applyUpgrade,
@@ -33,6 +41,25 @@ export interface EnemyForecast {
   readonly phase: EnemyPhase;
   readonly probability: Readonly<Record<Hand, number>>;
   readonly damage: Readonly<Record<Hand, number>>;
+  /** 敵の各手の熱による弱化段階。UIでは数値ではなく状態名で見せる。 */
+  readonly heatPenalty: Readonly<Record<Hand, number>>;
+}
+
+/** 手を選んだあとの3つの結果。期待値に丸めず、判断材料をそのまま返す。 */
+export interface HandOutlook {
+  readonly onWin: number;
+  readonly healOnWin: number;
+  readonly stareOnDraw: number;
+  readonly damageOnDraw: number;
+  readonly worstOnLose: number;
+  readonly heatCost: number;
+}
+
+/** 現在の熱が、手を使わなかった場合にいつ1段軽くなるか。 */
+export interface HeatRecoveryPreview {
+  readonly currentPenalty: number;
+  readonly turnsUntilRelief: number;
+  readonly penaltyAfterRelief: number;
 }
 
 export interface GameState {
@@ -196,6 +223,52 @@ export function damagePreview(state: GameState, hand: Hand): number {
   return dealtDamage(playerHandTable(state)[hand], enemy.resistance[hand], battle.stare);
 }
 
+/** 表示用。その手を選んだときの勝ち・あいこ・負けと、次ターンの熱コスト。 */
+export function handOutlook(state: GameState, hand: Hand): HandOutlook | null {
+  const battle = state.battle;
+  const enemy = currentEnemy(state);
+  if (state.phase !== 'battle' || battle === null || enemy === null) {
+    return null;
+  }
+
+  const value = playerHandTable(state)[hand];
+  const onWin = dealtDamage(value, enemy.resistance[hand], battle.stare);
+  const healOnWin = Math.max(
+    0,
+    Math.min(value.heal, onWin - 1, battle.playerMaxHp - battle.playerHp),
+  );
+
+  const stareOnDraw =
+    battle.stare >= STARE_MAX
+      ? 0
+      : Math.min(STARE_MAX, battle.stare + STARE_GAIN[enemy.drawRule]) - battle.stare;
+  const damageOnDraw = battle.stare >= STARE_MAX ? STARE_MAX_DRAW_DAMAGE : 0;
+
+  const forecast = enemyForecast(state);
+  let worstOnLose = 0;
+  if (forecast !== null) {
+    for (const enemyHand of HANDS) {
+      if (judge(hand, enemyHand) === 'lose') {
+        worstOnLose = Math.max(worstOnLose, forecast.damage[enemyHand]);
+      }
+    }
+  }
+
+  const currentDamage = value.damage;
+  const nextHeat = advanceHeat(state.playerHeat, hand, HEAT_RULE);
+  const nextDamage = applyHeat(buildHandTable(BASE_HANDS, state.upgrades), nextHeat, HEAT_RULE)[hand]
+    .damage;
+
+  return {
+    onWin,
+    healOnWin,
+    stareOnDraw,
+    damageOnDraw,
+    worstOnLose,
+    heatCost: Math.max(0, currentDamage - nextDamage),
+  };
+}
+
 /**
  * 表示用。強化画面で見せる「いまの値」と「強化したあとの値」。
  * 上限に達している手は両方が同じ値になる（applyUpgrade が counts をそのまま返すため）。
@@ -232,6 +305,11 @@ export function enemyForecast(state: GameState): EnemyForecast | null {
       scissors: dealtDamage(enemyHands.scissors, 1, battle.stare),
       paper: dealtDamage(enemyHands.paper, 1, battle.stare),
     },
+    heatPenalty: {
+      rock: heatPenalty(state.enemyHeat.rock, HEAT_RULE),
+      scissors: heatPenalty(state.enemyHeat.scissors, HEAT_RULE),
+      paper: heatPenalty(state.enemyHeat.paper, HEAT_RULE),
+    },
   };
 }
 
@@ -240,5 +318,26 @@ export function heatPenalties(state: GameState): Readonly<Record<Hand, number>> 
     rock: heatPenalty(state.playerHeat.rock, HEAT_RULE),
     scissors: heatPenalty(state.playerHeat.scissors, HEAT_RULE),
     paper: heatPenalty(state.playerHeat.paper, HEAT_RULE),
+  };
+}
+
+/** 表示用。手を使わずに冷ました場合、現在の弱化があと何ターン続くか。 */
+export function heatRecoveryPreview(state: GameState, hand: Hand): HeatRecoveryPreview {
+  const currentPenalty = heatPenalty(state.playerHeat[hand], HEAT_RULE);
+  if (currentPenalty === 0) {
+    return { currentPenalty: 0, turnsUntilRelief: 0, penaltyAfterRelief: 0 };
+  }
+
+  let cooledHeat = state.playerHeat[hand];
+  let turnsUntilRelief = 0;
+  while (heatPenalty(cooledHeat, HEAT_RULE) >= currentPenalty && cooledHeat > 0) {
+    cooledHeat -= 1;
+    turnsUntilRelief += 1;
+  }
+
+  return {
+    currentPenalty,
+    turnsUntilRelief,
+    penaltyAfterRelief: heatPenalty(cooledHeat, HEAT_RULE),
   };
 }

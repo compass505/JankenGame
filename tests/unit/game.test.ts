@@ -8,12 +8,19 @@ import {
   playHand,
   playerHandTable,
   startGame,
+  upgradePreview,
 } from '@/application/game';
 import type { GameState } from '@/application/game';
 import { enemyPhase } from '@/domain/enemy';
 import { HANDS } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
-import { NO_HEAT, advanceHeat, canUpgrade } from '@/domain/handTable';
+import {
+  NO_HEAT,
+  UPGRADE_MAX_PER_HAND,
+  advanceHeat,
+  applyUpgrade,
+  canUpgrade,
+} from '@/domain/handTable';
 import { HEAT_RULE } from '@/data/heat';
 import { STAGES } from '@/data/stages';
 import { createRng } from '@/lib/rng';
@@ -404,5 +411,78 @@ describe('enemyForecast', () => {
     if (forecast === null) return;
 
     expect(forecast.damage[after.lastLog.enemyHand]).toBe(after.lastLog.damageToPlayer);
+  });
+});
+
+// ── upgradePreview（docs/03 節5・節7） ──────────────────────────────
+//
+// 強化画面に数字が1つも出ていなかった（docs/01 の画面一覧は「現在値と3択」を要求している）。
+// ここでも「表示値が実際の強化結果と一致する」という関係だけを見る。
+
+describe('upgradePreview', () => {
+  it('next は current より damage が1だけ大きい（heal と stareBonus は動かない）', () => {
+    const state = startGame(createGame());
+
+    for (const hand of HANDS) {
+      const { current, next } = upgradePreview(state, hand);
+
+      expect(next.damage).toBe(current.damage + 1);
+      expect(next.heal).toBe(current.heal);
+      expect(next.stareBonus).toBe(current.stareBonus);
+    }
+  });
+
+  it('上限に達している手は current と next が同じ値', () => {
+    let state = startGame(createGame());
+    // 強化画面まで進めずに upgrades だけを上限まで積む（表示用の関数なので phase を問わない）
+    let counts = state.upgrades;
+    for (let i = 0; i < UPGRADE_MAX_PER_HAND; i += 1) {
+      counts = applyUpgrade(counts, 'rock');
+    }
+    state = { ...state, upgrades: counts };
+
+    expect(canUpgrade(state.upgrades, 'rock')).toBe(false);
+
+    const { current, next } = upgradePreview(state, 'rock');
+    expect(next).toEqual(current);
+  });
+
+  it('強化を選んだあと、次の戦闘の current が前の next と一致する', () => {
+    const seeds = Array.from({ length: 100 }, (_, i) => i + 1);
+
+    const upgradeState = ((): GameState | null => {
+      for (const seed of seeds) {
+        let state = startGame(createGame());
+        const rng = createRng(seed);
+        for (let i = 0; i < 100 && state.phase === 'battle'; i += 1) {
+          state = playHand(state, pickHand(i), rng);
+        }
+        if (state.phase === 'upgrade') return state;
+      }
+      return null;
+    })();
+
+    expect(
+      upgradeState,
+      `${seeds.length}シードすべてで強化画面に到達しなかった。実装のバグの可能性が高い`,
+    ).not.toBeNull();
+    if (upgradeState === null) return;
+
+    const promised = upgradePreview(upgradeState, 'rock').next;
+    const afterChoice = chooseUpgrade(upgradeState, 'rock');
+
+    // 次の戦闘の頭は熱が NO_HEAT なので、強化ぶんだけが乗った値になるはず
+    expect(upgradePreview(afterChoice, 'rock').current).toEqual(promised);
+  });
+
+  it('熱を含めない（同じ手を連打した直後でも current が下がらない）', () => {
+    const before = startGame(createGame());
+    const beforePreview = upgradePreview(before, 'rock');
+
+    const rng = createRng(9);
+    const after = playHand(before, 'rock', rng);
+
+    expect(after.playerHeat.rock).toBeGreaterThan(0);
+    expect(upgradePreview(after, 'rock')).toEqual(beforePreview);
   });
 });

@@ -1,3 +1,4 @@
+import type { HandOutlook, HeatRecoveryPreview } from '@/application/game';
 import type { Hand } from '@/domain/hand';
 import { HAND_LABEL, renderHandIcon } from '@/ui/components/handIcon';
 
@@ -7,6 +8,10 @@ export interface HandButtonOptions {
   readonly damagePreview?: number;
   /** 熱による弱化量（0〜HEAT_MAX_PENALTY）。0 なら何も出さない */
   readonly heatPenalty?: number;
+  /** 現在の熱が、未使用なら何ターンで1段軽くなるか。 */
+  readonly heatRecovery?: HeatRecoveryPreview;
+  /** この手を選んだときの3結果。戦闘中だけ渡す。 */
+  readonly outlook?: HandOutlook;
   /** この敵のこの手への耐性。1 なら何も出さない */
   readonly resistance?: number;
   readonly disabled?: boolean;
@@ -29,7 +34,9 @@ export function renderHandButton(options: HandButtonOptions): HTMLElement {
 
   const heatPenalty = options.heatPenalty ?? 0;
 
-  if (options.damagePreview !== undefined) {
+  if (options.outlook !== undefined) {
+    button.appendChild(renderOutlook(options.outlook));
+  } else if (options.damagePreview !== undefined) {
     const damage = document.createElement('div');
     damage.className = 'hand-button__damage';
     damage.textContent = `${String(options.damagePreview)} ダメージ`;
@@ -46,7 +53,21 @@ export function renderHandButton(options: HandButtonOptions): HTMLElement {
     const heat = document.createElement('div');
     heat.className = 'hand-button__heat';
     heat.dataset['level'] = String(heatPenalty);
-    heat.textContent = `-${String(heatPenalty)} 熱`;
+    const current = document.createElement('strong');
+    current.className = 'hand-button__heat-current';
+    current.textContent = `現在 -${String(heatPenalty)}`;
+    heat.appendChild(current);
+
+    const recovery = options.heatRecovery;
+    if (recovery !== undefined && recovery.turnsUntilRelief > 0) {
+      const relief = document.createElement('span');
+      relief.className = 'hand-button__heat-relief';
+      relief.textContent =
+        recovery.penaltyAfterRelief === 0
+          ? `未使用 ${String(recovery.turnsUntilRelief)}Tで解除`
+          : `未使用 ${String(recovery.turnsUntilRelief)}Tで -${String(recovery.penaltyAfterRelief)}へ`;
+      heat.appendChild(relief);
+    }
     badges.appendChild(heat);
   }
 
@@ -74,4 +95,47 @@ export function renderHandButton(options: HandButtonOptions): HTMLElement {
 
   button.addEventListener('click', options.onClick);
   return button;
+}
+
+function renderOutlook(outlook: HandOutlook): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'hand-button__outlook';
+
+  const winValue = `敵 -${String(outlook.onWin)}${outlook.healOnWin > 0 ? ` / HP +${String(outlook.healOnWin)}` : ''}`;
+  wrap.appendChild(renderOutlookRow('win', '勝ち', winValue));
+
+  const drawValue =
+    outlook.stareOnDraw > 0
+      ? `にらみ +${String(outlook.stareOnDraw)}`
+      : `双方 -${String(outlook.damageOnDraw)}`;
+  wrap.appendChild(renderOutlookRow('draw', 'あいこ', drawValue));
+  wrap.appendChild(renderOutlookRow('lose', '負け', `自分 -${String(outlook.worstOnLose)}`));
+
+  if (outlook.heatCost > 0) {
+    const cost = document.createElement('div');
+    cost.className = 'hand-button__future-heat';
+    cost.textContent = `使うと次から -${String(outlook.heatCost)}`;
+    wrap.appendChild(cost);
+  }
+
+  return wrap;
+}
+
+function renderOutlookRow(
+  kind: 'win' | 'draw' | 'lose',
+  label: string,
+  value: string,
+): HTMLElement {
+  const row = document.createElement('div');
+  row.className = `hand-button__outlook-row hand-button__outlook-row--${kind}`;
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'hand-button__outlook-label';
+  labelEl.textContent = label;
+  row.appendChild(labelEl);
+
+  const valueEl = document.createElement('strong');
+  valueEl.textContent = value;
+  row.appendChild(valueEl);
+  return row;
 }
