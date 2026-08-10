@@ -2,12 +2,57 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>じゃんけんRPG</title>
     <link rel="stylesheet" href="/src/ui/styles/main.css" />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div
+        id="startup-message"
+        role="status"
+        aria-live="polite"
+        style="
+          min-height: 100vh;
+          display: grid;
+          place-content: center;
+          gap: 10px;
+          padding: 24px;
+          background: #14161a;
+          color: #e8e6e3;
+          font-family: system-ui, sans-serif;
+          text-align: center;
+        "
+      >
+        <strong id="startup-message-title">じゃんけんRPGを読み込んでいます…</strong>
+        <span id="startup-message-detail" style="font-size: 0.85rem; opacity: 0.78"></span>
+      </div>
+    </div>
+    <script>
+      (() => {
+        const title = document.querySelector('#startup-message-title');
+        const detail = document.querySelector('#startup-message-detail');
+
+        if (location.protocol === 'file:') {
+          if (title) title.textContent = 'このファイルは直接開けません';
+          if (detail) {
+            detail.textContent =
+              'npm run dev を実行し、表示された http:// から始まるURLをChromeで開いてください。';
+          }
+          return;
+        }
+
+        window.setTimeout(() => {
+          if (document.querySelector('#startup-message') && title && detail) {
+            title.textContent = 'ゲームを読み込めませんでした';
+            detail.textContent = 'ページを再読み込みしてください。改善しない場合は開発サーバーを再起動してください。';
+          }
+        }, 2500);
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

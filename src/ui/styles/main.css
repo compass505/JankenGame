@@ -16,11 +16,13 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100svh;
   display: grid;
   place-items: center;
   background: var(--bg);
   color: var(--fg);
   font-family: system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
 }
 
 #app {
@@ -111,6 +113,7 @@ body {
 .screen--title,
 .screen--upgrade {
   min-height: calc(100vh - 32px);
+  min-height: calc(100svh - 32px);
   justify-content: center;
   padding: 32px 20px;
   border: 1px solid var(--panel-border);
@@ -505,6 +508,7 @@ body {
 .screen--result {
   width: 100%;
   min-height: min(680px, calc(100vh - 32px));
+  min-height: min(680px, calc(100svh - 32px));
   justify-content: center;
   padding: 32px 20px;
   border: 1px solid var(--panel-border);
@@ -728,6 +732,7 @@ body {
 }
 
 .primary-button {
+  min-height: 48px;
   padding: 12px 32px;
   font-size: 1.1rem;
   border-radius: 999px;
@@ -735,6 +740,7 @@ body {
   background: var(--accent);
   color: #1a1a1a;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .primary-button:hover {
@@ -2083,6 +2089,8 @@ body {
   background: var(--panel);
   color: var(--fg);
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .hand-button:hover:not(:disabled) {
@@ -2296,6 +2304,90 @@ body {
   .screen--battle .hand-button__icon {
     width: 48px;
     height: 48px;
+  }
+}
+
+/* iPhone 16（393 × 852）を基準にした縦持ちレイアウト */
+@media (max-width: 430px) {
+  body {
+    display: block;
+    min-height: 100svh;
+    overflow-x: hidden;
+  }
+
+  #app {
+    max-width: none;
+    min-height: 100svh;
+    padding:
+      max(10px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+
+  .screen {
+    gap: 12px;
+  }
+
+  .screen--title,
+  .screen--upgrade,
+  .screen--result {
+    min-height: calc(
+      100svh - max(20px, env(safe-area-inset-top)) -
+        max(20px, env(safe-area-inset-bottom))
+    );
+    border-radius: 14px;
+  }
+
+  .screen--battle {
+    gap: 8px;
+    padding-bottom: calc(230px + env(safe-area-inset-bottom));
+  }
+
+  .stage-progress {
+    min-height: 20px;
+  }
+
+  .battle-stage {
+    border-radius: 11px;
+  }
+
+  .battle-controls {
+    width: min(calc(100% - 24px), 456px);
+    padding: 7px 6px max(8px, env(safe-area-inset-bottom));
+    border-radius: 14px 14px 0 0;
+  }
+
+  .battle-controls .hand-row {
+    gap: 6px;
+  }
+
+  .screen--battle .hand-button {
+    min-width: 0;
+    padding-inline: 5px;
+  }
+
+  .player-panel .battle-effect {
+    top: -44px;
+    right: 10px;
+    width: 72px;
+  }
+
+  .damage-pop--player {
+    top: -12px;
+    font-size: 1.35rem;
+  }
+
+  .primary-button {
+    width: min(72%, 260px);
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .primary-button:active,
+  .hand-button:active:not(:disabled) {
+    filter: brightness(1.12);
+    transform: scale(0.98);
   }
 }
 

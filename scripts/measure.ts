@@ -169,6 +169,13 @@ interface RunResult {
   /** 戦闘ごとのターン数 */
   readonly battleTurns: readonly number[];
   readonly handUse: Readonly<Record<Hand, number>>;
+  /** 敵ごとの手の使用回数。**敵の個性が出ているかはここでしか見えない**。
+   *  通算の分布が揃っていても、敵ごとに中身が同じなら「どの敵とも同じ戦い方」を意味する */
+  readonly handUseByStage: readonly Readonly<Record<Hand, number>>[];
+}
+
+function emptyHandCount(): Record<Hand, number> {
+  return { rock: 0, scissors: 0, paper: 0 };
 }
 
 /** 強化はそのプレイが最も使っている手に寄せる。どの戦略にも同じ規則を当てる */
@@ -185,7 +192,8 @@ function playRun(seed: number, strategy: Strategy): RunResult {
   const rng = createRng(seed);
   let state = startGame(createGame());
 
-  const handUse: Record<Hand, number> = { rock: 0, scissors: 0, paper: 0 };
+  const handUse: Record<Hand, number> = emptyHandCount();
+  const handUseByStage: Record<Hand, number>[] = STAGES.map(() => emptyHandCount());
   const battleTurns: number[] = [];
   let turnIndex = 0;
 
@@ -193,6 +201,8 @@ function playRun(seed: number, strategy: Strategy): RunResult {
     if (state.phase === 'battle') {
       const hand = strategy.pick(state, turnIndex);
       handUse[hand] += 1;
+      const atStage = handUseByStage[state.stageIndex];
+      if (atStage !== undefined) atStage[hand] += 1;
       turnIndex += 1;
       const before = state;
       state = playHand(state, hand, rng);
@@ -214,6 +224,7 @@ function playRun(seed: number, strategy: Strategy): RunResult {
     stageReached: state.stageIndex,
     battleTurns,
     handUse,
+    handUseByStage,
   };
 }
 
@@ -227,13 +238,32 @@ interface Summary {
   readonly handShare: Readonly<Record<Hand, number>>;
   /** 各ステージで脱落した割合（到達できなかったぶんは数えない） */
   readonly dropoutByStage: readonly number[];
+  /** 敵ごとの手の使用割合 */
+  readonly handShareByStage: readonly Readonly<Record<Hand, number>>[];
+}
+
+/** 2つの分布の隔たり（総変動距離）。0 なら同じ戦い方、1 なら完全に別物。
+ *  **敵ごとの個性は、この値が敵ごとにどれだけ散るかで測る** */
+function distance(a: Readonly<Record<Hand, number>>, b: Readonly<Record<Hand, number>>): number {
+  return HANDS.reduce((sum, hand) => sum + Math.abs(a[hand] - b[hand]), 0) / 2;
+}
+
+function toShare(count: Readonly<Record<Hand, number>>): Record<Hand, number> {
+  const total = count.rock + count.scissors + count.paper;
+  if (total === 0) return { rock: 0, scissors: 0, paper: 0 };
+  return {
+    rock: count.rock / total,
+    scissors: count.scissors / total,
+    paper: count.paper / total,
+  };
 }
 
 function measure(strategy: Strategy, runs: number): Summary {
   let cleared = 0;
   let turnTotal = 0;
   let battleCount = 0;
-  const handTotal: Record<Hand, number> = { rock: 0, scissors: 0, paper: 0 };
+  const handTotal: Record<Hand, number> = emptyHandCount();
+  const handTotalByStage: Record<Hand, number>[] = STAGES.map(() => emptyHandCount());
   const reachedAt = new Array<number>(STAGES.length).fill(0);
   const lostAt = new Array<number>(STAGES.length).fill(0);
 
@@ -246,6 +276,13 @@ function measure(strategy: Strategy, runs: number): Summary {
       battleCount += 1;
     }
     for (const hand of HANDS) handTotal[hand] += result.handUse[hand];
+
+    for (let s = 0; s < STAGES.length; s += 1) {
+      const from = result.handUseByStage[s];
+      const to = handTotalByStage[s];
+      if (from === undefined || to === undefined) continue;
+      for (const hand of HANDS) to[hand] += from[hand];
+    }
 
     for (let s = 0; s <= result.stageReached && s < STAGES.length; s += 1) {
       const at = reachedAt[s];
@@ -273,12 +310,20 @@ function measure(strategy: Strategy, runs: number): Summary {
       const lost = lostAt[s] ?? 0;
       return reached === 0 ? 0 : lost / reached;
     }),
+    handShareByStage: handTotalByStage.map(toShare),
   };
 }
 
 // ---------------------------------------------------------------- 出力
 
 const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
+
+/** 表示用。`src/ui/` の同名の表を import しない（scripts は ui に依存させない） */
+const HAND_LABEL: Readonly<Record<Hand, string>> = {
+  rock: 'グー',
+  scissors: 'チョキ',
+  paper: 'パー',
+};
 
 const runsArg = process.argv[2];
 const RUNS = runsArg === undefined ? 20000 : Number(runsArg);
@@ -323,4 +368,30 @@ STAGES.forEach((enemy, i) => {
 console.log(
   `   平均     ${pct(meanWinRate(bestGreedy)).padStart(12)} ${pct(meanWinRate(bestMachine)).padStart(12)}`,
 );
+
+/**
+ * **敵の個性はここで測る。** 通算の手の分布が揃っていても、それは
+ * 「どの敵にも同じ3手を同じ割合で使っている」ことでも達成できてしまう。
+ * 敵ごとに分布が割れて初めて「敵ごとに別の戦い方をしている」と言える。
+ *
+ * `隔たり` は、その敵での分布と**5体を通した平均**との総変動距離。
+ * 0% ならその敵は平均どおりの戦い方しか要求しておらず、**個性が無い**。
+ */
+console.log(`\n=== 敵ごとの手の分布（${bestGreedy.name}）===\n`);
+console.log('敵           グー / チョキ / パー        主な手   隔たり');
+
+const overall = bestGreedy.handShare;
+let distanceTotal = 0;
+STAGES.forEach((enemy, i) => {
+  const share = bestGreedy.handShareByStage[i];
+  if (share === undefined) return;
+  const top = HANDS.reduce((a, b) => (share[b] > share[a] ? b : a));
+  const gap = distance(share, overall);
+  distanceTotal += gap;
+  const cells = `${pct(share.rock)} / ${pct(share.scissors)} / ${pct(share.paper)}`;
+  console.log(
+    `${String(i + 1)}. ${enemy.name.padEnd(6)} ${cells.padStart(22)}   ${HAND_LABEL[top].padEnd(5)} ${pct(gap).padStart(7)}`,
+  );
+});
+console.log(`   平均${pct(distanceTotal / STAGES.length).padStart(41)}`);
 console.log('');
