@@ -10,7 +10,6 @@ export const ENEMIES = {
     resistance: { rock: 1, scissors: 1, paper: 1 },
     desperateBonus: 1,
     drawRule: 'standard',
-    hint: 'くせがない',
   },
   rockGuard: {
     id: 'rockGuard',
@@ -21,7 +20,6 @@ export const ENEMIES = {
     resistance: { rock: 1, scissors: 1, paper: 1 },
     desperateBonus: 1,
     drawRule: 'standard',
-    hint: 'グーを好む',
   },
   shearBird: {
     id: 'shearBird',
@@ -32,7 +30,6 @@ export const ENEMIES = {
     resistance: { rock: 1, scissors: 1, paper: 1 },
     desperateBonus: 2,
     drawRule: 'standard',
-    hint: 'チョキを好む／パーも混ぜる／本気になると重い',
   },
   paperEnvoy: {
     id: 'paperEnvoy',
@@ -43,7 +40,6 @@ export const ENEMIES = {
     resistance: { rock: 1, scissors: 0.5, paper: 1 },
     desperateBonus: 1,
     drawRule: 'standard',
-    hint: 'パーを好む／チョキが効きにくい',
   },
   glicoKing: {
     id: 'glicoKing',
@@ -54,6 +50,5 @@ export const ENEMIES = {
     resistance: { rock: 1, scissors: 0.5, paper: 1 },
     desperateBonus: 2,
     drawRule: 'stareDouble',
-    hint: 'チョキが効きにくい／にらみが倍で溜まる／本気になると重い',
   },
 } satisfies Readonly<Record<string, EnemyDef>>;

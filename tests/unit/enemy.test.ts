@@ -17,7 +17,6 @@ function makeEnemy(overrides: Partial<EnemyDef> = {}): EnemyDef {
     // 本気の攻撃強化は application が掛ける（docs/03 節5）。domain 側は値を持つだけ
     desperateBonus: 0,
     drawRule: 'standard',
-    hint: 'テスト用',
     ...overrides,
   };
 }

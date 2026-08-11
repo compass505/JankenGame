@@ -1,5 +1,7 @@
 import { HANDS } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
+import { applyHeat } from '@/domain/handTable';
+import type { HandTable, HeatCounts, HeatRule } from '@/domain/handTable';
 import type { Rng } from '@/lib/rng';
 
 export type DrawRule = 'standard' | 'stareDouble';
@@ -17,7 +19,8 @@ export interface EnemyDef {
    *  掛けるのは application 側（docs/03 節5）。ここは値を持つだけ */
   readonly desperateBonus: number;
   readonly drawRule: DrawRule;
-  readonly hint: string;
+  /** この敵だけの値表。省略すると既定の値表を使う */
+  readonly hands?: HandTable;
 }
 
 export const UNIFORM_MIX = 0.3;
@@ -68,4 +71,24 @@ export function decideEnemyHand(
   }
 
   return 'paper';
+}
+
+/** 敵の値表を組み立てる唯一の出どころ（docs/03 節3）。 */
+export function buildEnemyHandTable(
+  base: HandTable,
+  enemy: EnemyDef,
+  history: HeatCounts,
+  rule: HeatRule,
+  phase: EnemyPhase,
+): HandTable {
+  const table = applyHeat(enemy.hands ?? base, history, rule);
+  if (phase !== 'desperate' || enemy.desperateBonus <= 0) {
+    return table;
+  }
+
+  return {
+    rock: { ...table.rock, damage: table.rock.damage + enemy.desperateBonus },
+    scissors: { ...table.scissors, damage: table.scissors.damage + enemy.desperateBonus },
+    paper: { ...table.paper, damage: table.paper.damage + enemy.desperateBonus },
+  };
 }

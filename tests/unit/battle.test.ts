@@ -47,7 +47,6 @@ function enemyDef(overrides: Partial<EnemyDef> = {}): EnemyDef {
     // resolveTurn は本気の強化を知らない（application が enemyHands に織り込む。docs/03 節5）
     desperateBonus: 0,
     drawRule: 'standard',
-    hint: 'テスト用',
     ...overrides,
   };
 }
