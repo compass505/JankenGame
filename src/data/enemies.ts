@@ -30,6 +30,11 @@ export const ENEMIES = {
     resistance: { rock: 1, scissors: 1, paper: 1 },
     desperateBonus: 2,
     drawRule: 'standard',
+    hands: {
+      rock: { damage: 3, heal: 0, stareBonus: 7 },
+      scissors: { damage: 5, heal: 0, stareBonus: 0 },
+      paper: { damage: 3, heal: 3, stareBonus: 0 },
+    },
   },
   paperEnvoy: {
     id: 'paperEnvoy',
@@ -40,6 +45,11 @@ export const ENEMIES = {
     resistance: { rock: 1, scissors: 0.5, paper: 1 },
     desperateBonus: 1,
     drawRule: 'standard',
+    hands: {
+      rock: { damage: 3, heal: 0, stareBonus: 4 },
+      scissors: { damage: 5, heal: 0, stareBonus: 0 },
+      paper: { damage: 2, heal: 3, stareBonus: 0 },
+    },
   },
   glicoKing: {
     id: 'glicoKing',
@@ -50,5 +60,10 @@ export const ENEMIES = {
     resistance: { rock: 1, scissors: 0.5, paper: 1 },
     desperateBonus: 2,
     drawRule: 'stareDouble',
+    hands: {
+      rock: { damage: 3, heal: 0, stareBonus: 4 },
+      scissors: { damage: 7, heal: 0, stareBonus: 0 },
+      paper: { damage: 3, heal: 0, stareBonus: 0 },
+    },
   },
 } satisfies Readonly<Record<string, EnemyDef>>;
