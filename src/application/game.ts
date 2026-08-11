@@ -7,7 +7,7 @@ import {
   resolveTurn,
 } from '@/domain/battle';
 import type { BattleState, TurnLog } from '@/domain/battle';
-import { enemyPhase, handProbabilities } from '@/domain/enemy';
+import { buildEnemyHandTable, enemyPhase, handProbabilities } from '@/domain/enemy';
 import type { EnemyDef, EnemyPhase } from '@/domain/enemy';
 import { HANDS, judge } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
@@ -108,7 +108,7 @@ export function playHand(state: GameState, hand: Hand, rng: Rng): GameState {
   // 画面に出す表（playerHandTable）と実ダメージの元をずらさないため、同じ関数から取る
   const playerHands = playerHandTable(state);
   const phase = enemyPhase(state.battle.enemyHp, state.battle.enemyMaxHp);
-  const enemyHands = enemyHandTable(state, enemy, phase);
+  const enemyHands = enemyHandTableWith(state, enemy, phase);
   const result = resolveTurn(
     state.battle,
     hand,
@@ -197,21 +197,27 @@ export function currentEnemy(state: GameState): EnemyDef | null {
   return STAGES[state.stageIndex] ?? null;
 }
 
-function enemyHandTable(
+function enemyHandTableWith(
   state: GameState,
   enemy: EnemyDef,
   phase: EnemyPhase,
 ): HandTable {
-  const base = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE);
-  if (phase !== 'desperate' || enemy.desperateBonus <= 0) {
-    return base;
+  return buildEnemyHandTable(BASE_HANDS, enemy, state.enemyHeat, HEAT_RULE, phase);
+}
+
+/**
+ * 表示・計測用。いまの敵の値表（敵ごとの値表・弱化・本気強化をすべて適用したあと）。
+ * 戦闘中でなければ null。`ctx.enemyHands` と同じ値を返す。
+ * scripts/measure.ts もここを通す（式の2つ目の写しを作らない。docs/03 節5）
+ */
+export function enemyHandTable(state: GameState): HandTable | null {
+  const battle = state.battle;
+  const enemy = currentEnemy(state);
+  if (state.phase !== 'battle' || battle === null || enemy === null) {
+    return null;
   }
 
-  return {
-    rock: { ...base.rock, damage: base.rock.damage + enemy.desperateBonus },
-    scissors: { ...base.scissors, damage: base.scissors.damage + enemy.desperateBonus },
-    paper: { ...base.paper, damage: base.paper.damage + enemy.desperateBonus },
-  };
+  return enemyHandTableWith(state, enemy, enemyPhase(battle.enemyHp, battle.enemyMaxHp));
 }
 
 /** プレイヤーの表の唯一の組み立て口。強化を足してから弱化を引く（docs/03 節2.5 の適用順序）。
@@ -318,7 +324,7 @@ export function enemyForecast(state: GameState): EnemyForecast | null {
   }
 
   const phase = enemyPhase(battle.enemyHp, battle.enemyMaxHp);
-  const enemyHands = enemyHandTable(state, enemy, phase);
+  const enemyHands = enemyHandTableWith(state, enemy, phase);
 
   return {
     phase,
