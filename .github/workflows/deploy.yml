@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+# main に push されたら、check を通してからビルドして公開する。
+# check を挟むのは、壊れたものを公開しないため（CLAUDE.md「npm run check が
+# 通らない状態でコミットしない」と同じ考え方をデプロイにも当てる）。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 連続で push したときに古いデプロイが後から上書きしないようにする
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # リポジトリ側で Pages を有効にしていなくても、ここで有効化される
+      # （手作業で設定を触らずに済ませるため）
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # 型 + テスト + レイヤ規約。ここが赤いなら公開しない
+      - run: npm run check
+
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

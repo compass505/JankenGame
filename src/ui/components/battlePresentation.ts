@@ -1,6 +1,7 @@
 import type { TurnLog } from '@/domain/battle';
 import type { EnemyDef } from '@/domain/enemy';
 import { renderHandIcon } from '@/ui/components/handIcon';
+import { assetUrl } from '@/ui/assetUrl';
 
 const OUTCOME_COPY = {
   win: { mark: 'WIN', label: 'あなたの勝ち！' },
@@ -149,7 +150,7 @@ export function playPhaseShiftPresentation(
 
   const portrait = document.createElement('img');
   portrait.className = 'phase-shift__portrait';
-  portrait.src = `/assets/enemy-${enemy.id}.png`;
+  portrait.src = assetUrl(`enemy-${enemy.id}.png`);
   portrait.alt = '';
   portrait.setAttribute('aria-hidden', 'true');
   overlay.appendChild(portrait);

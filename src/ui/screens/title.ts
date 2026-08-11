@@ -1,5 +1,6 @@
 import type { GameState } from '@/application/game';
 import type { Actions } from '@/ui/app';
+import { assetUrl } from '@/ui/assetUrl';
 
 export function renderTitle(_state: GameState, actions: Actions): HTMLElement {
   const el = document.createElement('main');
@@ -7,7 +8,7 @@ export function renderTitle(_state: GameState, actions: Actions): HTMLElement {
 
   const logo = document.createElement('img');
   logo.className = 'title-logo';
-  logo.src = '/assets/title-logo.png';
+  logo.src = assetUrl('title-logo.png');
   logo.alt = '';
   logo.setAttribute('aria-hidden', 'true');
   el.appendChild(logo);

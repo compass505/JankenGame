@@ -1,4 +1,5 @@
 import type { Hand } from '@/domain/hand';
+import { assetUrl } from '@/ui/assetUrl';
 
 export const HAND_LABEL: Readonly<Record<Hand, string>> = {
   rock: 'グー',
@@ -10,7 +11,7 @@ export const HAND_LABEL: Readonly<Record<Hand, string>> = {
 export function renderHandIcon(hand: Hand, className: string): HTMLImageElement {
   const icon = document.createElement('img');
   icon.className = className;
-  icon.src = `/assets/hand-${hand}.png`;
+  icon.src = assetUrl(`hand-${hand}.png`);
   icon.alt = HAND_LABEL[hand];
   return icon;
 }

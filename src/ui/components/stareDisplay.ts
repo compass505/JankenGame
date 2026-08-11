@@ -1,3 +1,4 @@
+import { assetUrl } from '@/ui/assetUrl';
 export function renderStareDisplay(stare: number, justIncreased: boolean): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'stare-display';
@@ -6,7 +7,7 @@ export function renderStareDisplay(stare: number, justIncreased: boolean): HTMLE
 
     const effect = document.createElement('img');
     effect.className = 'stare-display__effect';
-    effect.src = '/assets/effect-stare.png';
+    effect.src = assetUrl('effect-stare.png');
     effect.alt = '';
     effect.setAttribute('aria-hidden', 'true');
     wrap.appendChild(effect);

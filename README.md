@@ -2,6 +2,8 @@
 
 じゃんけんの要素を戦闘に組み込んだ小規模RPG。ブラウザで動く。
 
+**▶ 遊ぶ: https://compass505.github.io/JankenGame/**
+
 ## セットアップ
 
 ```bash

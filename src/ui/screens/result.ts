@@ -2,6 +2,7 @@ import { currentEnemy } from '@/application/game';
 import type { GameState } from '@/application/game';
 import { renderEnemyDefeat } from '@/ui/components/enemyDefeat';
 import type { Actions } from '@/ui/app';
+import { assetUrl } from '@/ui/assetUrl';
 
 export function renderResult(state: GameState, actions: Actions): HTMLElement {
   const el = document.createElement('main');
@@ -16,7 +17,7 @@ export function renderResult(state: GameState, actions: Actions): HTMLElement {
   } else {
     const emblem = document.createElement('img');
     emblem.className = 'result-emblem';
-    emblem.src = '/assets/result-gameover.png';
+    emblem.src = assetUrl('result-gameover.png');
     emblem.alt = '';
     emblem.setAttribute('aria-hidden', 'true');
     el.appendChild(emblem);
@@ -57,7 +58,7 @@ function renderVictoryCeremony(): HTMLElement {
 
   const emblem = document.createElement('img');
   emblem.className = 'result-emblem result-emblem--victory';
-  emblem.src = '/assets/result-victory.png';
+  emblem.src = assetUrl('result-victory.png');
   emblem.alt = '';
   ceremony.appendChild(emblem);
 

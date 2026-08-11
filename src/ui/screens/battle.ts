@@ -10,13 +10,14 @@ import { HAND_LABEL, renderHandIcon } from '@/ui/components/handIcon';
 import { renderHpBar } from '@/ui/components/hpBar';
 import { renderStareDisplay } from '@/ui/components/stareDisplay';
 import type { Actions } from '@/ui/app';
+import { assetUrl } from '@/ui/assetUrl';
 
 const BATTLE_BACKGROUND_BY_ENEMY_ID: Readonly<Record<string, string>> = {
-  scarecrow: '/assets/battle-bg-scarecrow.png',
-  rockGuard: '/assets/battle-bg-rockGuard.png',
-  shearBird: '/assets/battle-bg-shearBird.png',
-  paperEnvoy: '/assets/battle-bg-paperEnvoy.png',
-  glicoKing: '/assets/battle-bg-glicoKing.png',
+  scarecrow: assetUrl('battle-bg-scarecrow.png'),
+  rockGuard: assetUrl('battle-bg-rockGuard.png'),
+  shearBird: assetUrl('battle-bg-shearBird.png'),
+  paperEnvoy: assetUrl('battle-bg-paperEnvoy.png'),
+  glicoKing: assetUrl('battle-bg-glicoKing.png'),
 };
 
 const HAND_ROLE: Readonly<Record<Hand, string>> = {
@@ -67,7 +68,7 @@ export function renderBattle(state: GameState, actions: Actions): HTMLElement {
   } else if (log !== null && log.damageToPlayer > 0) {
     portrait.classList.add('enemy-panel__portrait--attack');
   }
-  portrait.src = `/assets/enemy-${enemy.id}.png`;
+  portrait.src = assetUrl(`enemy-${enemy.id}.png`);
   portrait.alt = enemy.name;
   stage.appendChild(portrait);
 
@@ -266,7 +267,7 @@ function renderHandRoleGuide(): HTMLElement {
 function renderBattleEffect(kind: 'hit' | 'heal'): HTMLImageElement {
   const effect = document.createElement('img');
   effect.className = `battle-effect battle-effect--${kind}`;
-  effect.src = `/assets/effect-${kind}.png`;
+  effect.src = assetUrl(`effect-${kind}.png`);
   effect.alt = '';
   effect.setAttribute('aria-hidden', 'true');
   return effect;

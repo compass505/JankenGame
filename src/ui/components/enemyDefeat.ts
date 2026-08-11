@@ -1,4 +1,5 @@
 import type { EnemyDef } from '@/domain/enemy';
+import { assetUrl } from '@/ui/assetUrl';
 
 interface DefeatPresentation {
   readonly line: string;
@@ -44,7 +45,7 @@ export function renderEnemyDefeat(
     card.classList.add('enemy-defeat--final');
   }
   card.dataset['enemy'] = enemy.id;
-  card.style.setProperty('--defeat-background', `url("/assets/battle-bg-${enemy.id}.png")`);
+  card.style.setProperty('--defeat-background', `url("${assetUrl(`battle-bg-${enemy.id}.png`)}")`);
   card.setAttribute('aria-label', `${enemy.name}を撃破`);
 
   const flash = document.createElement('div');
@@ -54,7 +55,7 @@ export function renderEnemyDefeat(
 
   const portrait = document.createElement('img');
   portrait.className = 'enemy-defeat__portrait';
-  portrait.src = `/assets/enemy-${enemy.id}.png`;
+  portrait.src = assetUrl(`enemy-${enemy.id}.png`);
   portrait.alt = '';
   portrait.setAttribute('aria-hidden', 'true');
   card.appendChild(portrait);

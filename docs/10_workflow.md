@@ -83,8 +83,24 @@ README とコミットメッセージは他人が読む前提で書く。
 
 ### GitHub Pages
 
-実装が動いてから設定する。今はデプロイするものがないので不要。
-**2日目に実装が動いた段階で、ユーザーに提案すること。** 遊べるURLがあると人に見せやすい。
+**設定済み**（2026-08-11）。https://compass505.github.io/JankenGame/
+
+`main` に push すると `.github/workflows/deploy.yml` が走る。
+**`npm run check` を通してからビルドする**ので、赤いものは公開されない。
+
+> **画像を `/assets/...` と直書きしないこと。** Pages はリポジトリ名の
+> サブディレクトリ配信なので、先頭の `/` はサイトのルートを指してしまう。
+> 参照は必ず `src/ui/assetUrl.ts` の `assetUrl()` を通す。
+>
+> **開発サーバでは絶対に踏めない不具合が1つある。** `assetUrl` が相対URLを返すと、
+> `img.src` は文書基準で正しく引けるのに、**CSS カスタムプロパティに入れたものだけが
+> 外部スタイルシート基準で解決され** `/JankenGame/assets/assets/…` になって 404 する。
+> `assetUrl` が `document.baseURI` で絶対URLまで解決しているのはこのため。
+>
+> **配信のしかたを変えたら、サブディレクトリで実際に配って確かめる。**
+> `npm run build` したあと `dist` を `JankenGame/` という名前のディレクトリに置いて
+> 静的サーバを立て、`http://localhost:PORT/JankenGame/` を開く。
+> ルート（`/`）で確認しても、この種の不具合は出ない。
 
 ## テストの3層
 
