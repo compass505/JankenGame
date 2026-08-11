@@ -603,6 +603,12 @@ export function currentEnemy(state: GameState): EnemyDef | null;
  * `ctx.playerHands` に渡すものと同じ値を返すこと（画面の数字と実ダメージを一致させる）
  */
 export function playerHandTable(state: GameState): HandTable;
+/**
+ * 表示・計測用。いまの敵の値表（**敵ごとの値表・弱化・本気強化をすべて適用したあと**）。
+ * 戦闘中でなければ `null`。`ctx.enemyHands` と**同じ値を返すこと**。
+ * **公開する理由**は「唯一の出どころ」を `application` の外にも使わせるため（下記）。
+ */
+export function enemyHandTable(state: GameState): HandTable | null;
 /** 表示用。熱による弱化量（0〜HEAT_MAX_PENALTY）。UI が「-1」等を出すのに使う */
 export function heatPenalties(state: GameState): Readonly<Record<Hand, number>>;
 
@@ -728,6 +734,80 @@ phase === 'desperate' かつ enemy.desperateBonus > 0 なら
 
 **敵ごとの値表を選ぶのは1行目だけ**（`docs/adr/0004-enemy-hand-table.md`）。
 **段の順序は変えない。** 弱化と本気強化は、どの値表の上にも同じように乗る。
+
+### 関数を2つに分ける（`playerHandTable` と同じ形）
+
+```ts
+/** 内部用。敵とフェーズを明示して組み立てる。playHand と enemyForecast が使う */
+function enemyHandTableWith(state: GameState, enemy: EnemyDef, phase: EnemyPhase): HandTable;
+
+/** 公開。state だけから今の敵の表を返す。戦闘中でなければ null */
+export function enemyHandTable(state: GameState): HandTable | null;
+```
+
+`playerHandTableWith` / `playerHandTable` と同じ分け方にする。
+
+**公開する理由。** `scripts/measure.ts` が**この式の2つ目の写しを持っていて、すでにずれている。**
+貪欲プレイの読みを作るところで `applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE)` と
+自前で組み立てており、**`desperateBonus` を落としている**（本気の敵を弱く見積もっている）。
+敵ごとの値表を入れると、この写しは**必ず**ずれる。
+
+**バランスの判断はこのスクリプトの数字で行う**ので、ここがずれると
+**設計の検証そのものが成立しない。** 写しを消し、`enemyHandTable(state)` を呼ばせる。
+
+> **`handOutlook.worstOnLose` は既に一本化されている**（`enemyForecast.damage` を参照している）。
+> 敵のダメージを導出している箇所は、これで `enemyHandTableWith` の1本になる。
+
+### 具体例（そのままテストにできる）
+
+**「回復せず、にらみが凶器になる敵」が本気に入り、直近2手ともグーだった局面。**
+
+```
+enemy.hands = {
+  rock:     { damage: 3, heal: 0, stareBonus: 6 },   ← 既定は stareBonus 4
+  scissors: { damage: 5, heal: 0, stareBonus: 0 },
+  paper:    { damage: 3, heal: 0, stareBonus: 0 },   ← 既定は heal 3
+}
+enemy.desperateBonus = 2、phase = 'desperate'
+state.enemyHeat = ['rock', 'rock']
+HEAT_RULE = { window: 4, allowed: 2, maxPenalty: 3 }
+```
+
+```
+1. 表を選ぶ    enemy.hands（省略していないので BASE_HANDS は使わない）
+2. 弱化        グーは history に2つ ＋ 今回1 = 3 回、allowed 2 → penalty 1
+               damage 3 → max(1, 3 − 1) = 2。チョキとパーは penalty 0
+3. 本気強化    3手それぞれ +2  →  グー 4 / チョキ 7 / パー 5
+               **heal と stareBonus は動かない**
+
+結果 = {
+  rock:     { damage: 4, heal: 0, stareBonus: 6 },
+  scissors: { damage: 7, heal: 0, stareBonus: 0 },
+  paper:    { damage: 5, heal: 0, stareBonus: 0 },
+}
+```
+
+**にらみ 2 のときに敵がグーで勝つと**、`dealtDamage(rock, 1, 2)` は
+`max(1, floor(4 × 1)) + 2 × 6 = 16`。**プレイヤーの最大HP 25 に対して16。**
+
+> **この例が、`stareBonus` を画面に出さなければならない理由そのもの。**
+> プレイヤーはあいこでにらみを溜めた側であり、**自分で溜めたものに16殴られる。**
+> 溜める前にそれが読めないなら、それは読み合いではなく罠になる。
+
+このとき固有能力の行に出る文（節7 の順序で組み立てる）。
+
+```
+耐性なし／あいこ時のにらみ+1／グーはにらみ1つにつき +6／パーで回復しない
+```
+
+**境界の扱い**
+
+| 場面 | どうなるか |
+| --- | --- |
+| `enemy.hands` を省略 | `BASE_HANDS` を使う。**既存の4体は1文字も変わらない** |
+| `enemyHandTable(state)` を戦闘外で呼ぶ | `null`（`currentEnemy` / `enemyForecast` と同じ約束） |
+| `heal` を大きく書いた | `resolveTurn` が `dealt − 1` で抑える。**終了保証は値表では壊れない** |
+| 弱化で `damage` が 0 以下になる | `applyHeat` が `max(1, …)` で 1 に止める（既存の規則） |
 
 **`ctx.enemyHands` と `enemyForecast` の両方がこの関数を通ること。**
 片方だけ本気の強化を掛けると、**画面の「負けたら -N」が実ダメージと食い違う**
@@ -1023,15 +1103,30 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 いま出しているもの（耐性 `<1`・あいこルール）に加えて、
 **`enemy.hands` が `BASE_HANDS` と違うところだけ**を出す。
 
-| 差 | 出す文言の例 | なぜ要るか |
-| --- | --- | --- |
-| `heal` が違う | `パーで回復しない` / `パーで5回復する` | **回復量は被弾の列に出ていない。**出さないと読めないまま変わる |
-| `stareBonus` が違う | `にらみ1つにつき +6` | 同上。**にらみは共有なので、溜める判断そのものが変わる** |
-| `damage` が違う | 出さなくてよい | **被弾の列に実値が出ている**（`enemyForecast.damage`） |
+**比べる相手は `BASE_HANDS`。** 3手 × 3項目を順に見て、違うものだけ文を足す。
 
-- **耐性が `>1`（弱点）のときも出す。** 現在の実装は `resistance < 1` しか拾わず、
-  ボタン側は `耐性 ×1.5` と**逆の意味で**表示する。弱点を使うなら文言を分ける
+| 見るもの | 条件 | 出す文 |
+| --- | --- | --- |
+| `heal` | `0` になった | `{手}で回復しない` |
+| `heal` | 増減した | `{手}で{n}回復する` |
+| `stareBonus` | `0` になった | `{手}ににらみが乗らない` |
+| `stareBonus` | 増減した | `{手}はにらみ1つにつき +{n}` |
+| `damage` | 違う | **出さない**（被弾の列に実値が出ている） |
+
+**並び順は `HANDS` の順（グー・チョキ・パー）→ 項目は `heal` → `stareBonus` の順**に固定する。
+既存の耐性・あいこルールの文の**後ろ**に足し、区切りは既存どおり `／`。
+
+- **`damage` を出さない理由**は、被弾の列（`enemyForecast.damage`）が
+  **弱化と本気強化まで含んだ実値**を既に出しているため。ここで基礎値を併記すると、
+  画面に2つの数字が並んで**どちらが本物か分からなくなる**
+- **`heal` と `stareBonus` を出す理由**は、**どちらも画面のどこにも出ていない**から。
+  とくに `stareBonus` は、にらみが共有である以上
+  **「溜めるか否か」というこのゲームの中心の判断を直接動かす**
 - 差が無い敵は、これまでどおり `耐性なし／あいこ時のにらみ+1` のまま
+
+**耐性が `>1`（弱点）のときの表示は、この設計では決めない。**
+現在の実装は敵パネルが `resistance < 1` しか拾わず、ボタン側は `耐性 ×1.5` と
+**逆の意味で**表示する。弱点を使うと決めた時点で別途直す（ADR 0004 は弱点を必須にしていない）。
 
 ### 強化画面にも数字を出す（2026-08-10 追加）
 
@@ -1147,3 +1242,21 @@ const rng = createRng(Date.now() >>> 0);
 
 **`domain/battle.ts` は触らない。** 触る必要が出たら設計が間違っているので、
 実装を進める前に `docs/03` に戻ること。
+
+### 敵ごとの値表ぶん（2026-08-11・`docs/adr/0004-enemy-hand-table.md`）
+
+**これも既存モジュールへの追加のみ。** この順で入れる。
+
+1. `domain/enemy.ts` — `EnemyDef` に `hands?: HandTable` を足し、**`hint` を消す**
+2. `data/enemies.ts` — 5体から `hint` を消す（**値表はまだ書かない**。`/balance` の仕事）
+3. `application/game.ts` — `enemyHandTableWith` の1行目と、公開版 `enemyHandTable(state)`
+4. `scripts/measure.ts` — 敵の表の写しを消し、`enemyHandTable(state)` を呼ぶ
+5. `ui/components/enemyForecast.ts` — 固有能力の行に `BASE_HANDS` との差分を足す（節7）
+
+**1〜4 まで入れた時点で、画面も計測も見た目は1つも変わらない**
+（値表を書いていないので全敵が既定に落ちる）。**ここで `npm run check` が緑に戻ること**が、
+「仕組みだけを入れた」ことの確認になる。5 は差分が無い間は何も出さない。
+
+**`domain/battle.ts` と `BattleState` は触らない。**
+**`/balance` に入るまで `src/data/enemies.ts` に値表を1つも書かない。**
+仕組みの不具合と数値の善し悪しを、同じ差分に混ぜない。

@@ -141,13 +141,28 @@ ADR 0001 の決定にこう書いてある。
 | ファイル | 変わるもの |
 | --- | --- |
 | `src/domain/enemy.ts` | `EnemyDef` に `hands?: HandTable`（`hint` は落とす） |
-| `src/application/game.ts` | `enemyHandTable` の1行（`enemy.hands ?? BASE_HANDS`） |
+| `src/application/game.ts` | `enemyHandTable` の1行（`enemy.hands ?? BASE_HANDS`）と、**公開版の追加** |
+| `scripts/measure.ts` | 敵の表の**2つ目の写しを消す**（下記） |
 | `src/data/enemies.ts` | 差をつけたい敵にだけ値表を書く |
 | `src/ui/components/enemyForecast.ts` | 固有能力の行に、`BASE_HANDS` との差分を出す |
 | `docs/01_requirements.md` | 「敵もプレイヤーと同じ値表を使う」を書き換える |
 | `docs/03_detailed-design.md` | 節3（`EnemyDef`）・節5（`enemyHandTable`）・節6・節7 |
 
 **`src/domain/battle.ts` は変更しない。** 触る必要が出たら設計が間違っている。
+
+### 計測スクリプトの写しを消す（設計時に見つかった不具合）
+
+`scripts/measure.ts` は貪欲プレイの読みを作るところで**敵の表を自前で組み立てており**、
+`applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE)` と書いて
+**`desperateBonus` を落としている。本気の敵を弱く見積もったまま測っていた。**
+
+敵ごとの値表を入れると、この写しは**必ず**ずれる。そして
+**バランスの判断はこのスクリプトの数字で行う**ので、ずれたままでは
+このADRの検証そのものが成立しない。
+
+したがって `application/game.ts` に `enemyHandTable(state)` を**公開版として足し**、
+スクリプトはそれを呼ぶ。`playerHandTable` と同じ形にする
+（`docs/03` 節5）。**式を2箇所に置かない**という既存の方針の適用であって、例外ではない。
 
 ### どの敵にどう振るかは、このADRでは決めない
 

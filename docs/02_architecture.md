@@ -14,7 +14,7 @@ src/
   domain/               純粋ロジック。data を import しない
     hand.ts             Hand / Outcome / judge
     handTable.ts        手の値、強化の適用、熱の適用と更新
-    enemy.ts            EnemyDef の型、敵の手の抽選
+    enemy.ts            EnemyDef の型（敵ごとの値表を含む）、敵の手の抽選
     battle.ts           BattleState、1ターンの解決
   data/                 数値定義のみ。リテラルだけ
     hands.ts            グー/チョキ/パーの基礎値
@@ -38,6 +38,22 @@ src/
 - `/balance` で `src/data/` を書き換えても `domain/` のテストは1本も壊れない。
 
 型は `domain/` が持ち、`data/` がそれを実装する（`import type` のみ。値の依存は発生しない）。
+
+### 敵ごとの値表が層をまたぐ流れ（`docs/adr/0004-enemy-hand-table.md`）
+
+**敵ごとに値表を持たせても、依存の向きは1つも変わらない。** 4層をこう通る。
+
+| 層 | 持つもの |
+| --- | --- |
+| `domain/enemy.ts` | `EnemyDef.hands?: HandTable` という**型だけ** |
+| `data/enemies.ts` | その敵の**数値**（書かない敵は既定に落ちる） |
+| `application/game.ts` | `enemy.hands ?? BASE_HANDS` を選び、弱化と本気強化を乗せる |
+| `ui/` | 組み上がった表を**受け取って描くだけ**。自分で組み立てない |
+
+**既定値の `BASE_HANDS` を選ぶのが `application` なのは、`domain` が `data` を
+import できないから。** `domain` は「表が渡ってくる」ことしか知らない。
+`resolveTurn` は敵ごとの値表という概念を**知らないまま**動く
+（熱を足したときと同じ理屈。下の `BattleState` の注を参照）。
 
 ### `src/data/` に書けるもの
 
