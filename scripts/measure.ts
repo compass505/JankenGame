@@ -17,18 +17,18 @@ import type { BattleState } from '@/domain/battle';
 import { enemyPhase, handProbabilities } from '@/domain/enemy';
 import { HANDS } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
-import { advanceHeat, applyHeat, canUpgrade, heatPenalty } from '@/domain/handTable';
+import { advanceHeat, canUpgrade, heatPenalty } from '@/domain/handTable';
 import type { HandTable, HeatCounts } from '@/domain/handTable';
 import {
   chooseUpgrade,
   createGame,
   currentEnemy,
+  enemyHandTable,
   playHand,
   playerHandTable,
   startGame,
 } from '@/application/game';
 import type { GameState } from '@/application/game';
-import { BASE_HANDS } from '@/data/hands';
 import { HEAT_RULE } from '@/data/heat';
 import { STAGES } from '@/data/stages';
 import { createRng } from '@/lib/rng';
@@ -128,7 +128,8 @@ function greedy(name: string, useHeatCost: boolean): Strategy {
       if (battle === null || enemy === null) return 'rock';
 
       const playerHands = playerHandTable(state);
-      const enemyHands = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE);
+      const enemyHands = enemyHandTable(state);
+      if (enemyHands === null) return 'rock';
       const ctx = { playerHands, enemyHands, enemy };
       const p = handProbabilities(enemy, enemyPhase(battle.enemyHp, battle.enemyMaxHp));
 
