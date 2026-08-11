@@ -4,6 +4,9 @@
 > **2026-08-10 追記**: 連打の罰を追加し、その後**方式を「熱」から「直近4手の窓」に変えた**
 > （節2.5・節5）。`docs/adr/0002-hand-heat.md` → `docs/adr/0003-repetition-window.md`。
 > あわせて強化の行き先を手ごとに変え（節2）、本気フェーズの強化を足した（節3・節5）。
+> **2026-08-11 追記**: **敵ごとに値表を持てるようにした**（節3・節5・節6・節7）。
+> `docs/adr/0004-enemy-hand-table.md`。敵の個性が「偏り・耐性・HP・本気強化」の
+> 数値違いしか無く、仕掛けの種類が1つしかなかったため。**`hint` は落とした。**
 > **`domain/battle.ts` と `BattleState` は変更しない。**
 > **この文書は「読んで実装できる」粒度で書く。** `/test` はここからテストを書き、
 > `/impl` は Codex がここだけを見て実装する。曖昧な箇所を残さない。
@@ -219,6 +222,7 @@ next = [...history, used]
 
 ```ts
 import type { Hand } from '@/domain/hand';
+import type { HandTable } from '@/domain/handTable';
 import type { Rng } from '@/lib/rng';
 
 export type DrawRule = 'standard' | 'stareDouble';
@@ -238,8 +242,9 @@ export interface EnemyDef {
   /** 本気（desperate）のとき、敵の全手のダメージに足す量。0 なら強化なし */
   readonly desperateBonus: number;
   readonly drawRule: DrawRule;
-  /** 画面に出す偏りの説明。読み合いの材料は公開情報にする */
-  readonly hint: string;
+  /** この敵だけの値表。**省略すると `BASE_HANDS`**（プレイヤーと同じ値）を使う
+   *  （`docs/adr/0004-enemy-hand-table.md`）。強化は乗らない */
+  readonly hands?: HandTable;
 }
 
 /** 一様分布を混ぜる割合。各手の確率が必ず 0.1 以上になる */
@@ -716,10 +721,13 @@ ctx = { playerHands, enemyHands, enemy: STAGES[state.stageIndex] }
 **敵は強化されないが、弱化と本気の強化は持つ。** 唯一の出どころをここに置く。
 
 ```
-表 = applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE)
+表 = applyHeat(enemy.hands ?? BASE_HANDS, state.enemyHeat, HEAT_RULE)
 phase === 'desperate' かつ enemy.desperateBonus > 0 なら
     3手それぞれの damage に enemy.desperateBonus を足す
 ```
+
+**敵ごとの値表を選ぶのは1行目だけ**（`docs/adr/0004-enemy-hand-table.md`）。
+**段の順序は変えない。** 弱化と本気強化は、どの値表の上にも同じように乗る。
 
 **`ctx.enemyHands` と `enemyForecast` の両方がこの関数を通ること。**
 片方だけ本気の強化を掛けると、**画面の「負けたら -N」が実ダメージと食い違う**
@@ -904,15 +912,31 @@ export const ENEMIES = {
 `satisfies` を使う（`: Record<string, EnemyDef>` と注釈すると、
 `ENEMIES.scarecrow` の型が広がって `stages.ts` 側で不便になる）。
 
-`hint` は**画面にそのまま出す1行**。5体分をここで確定させる。
+### 敵ごとの値表（`hands`・`docs/adr/0004-enemy-hand-table.md`）
 
-| id | hint |
-| --- | --- |
-| `scarecrow` | くせがない |
-| `rockGuard` | グーを好む |
-| `shearBird` | チョキを好む／パーも混ぜる／本気になると重い |
-| `paperEnvoy` | パーを好む／チョキが効きにくい |
-| `glicoKing` | チョキが効きにくい／にらみが倍で溜まる／本気になると重い |
+**書かない敵は `BASE_HANDS` のまま。** 差をつけたい敵にだけ書く。
+
+```ts
+  paperEnvoy: {
+    // …既存のフィールド…
+    hands: { rock: { damage: 3, heal: 0, stareBonus: 4 }, /* … */ },
+  },
+```
+
+**契約は節4 と同じ**（`damage` は1以上の整数、`heal` と `stareBonus` は0以上の整数）。
+`heal` を大きくしても**終了保証は壊れない**。`resolveTurn` が `heal ≤ dealt − 1` で
+抑えているので、保証は `domain` 側にあり、値表の側は関知しない。
+
+**にらみは共有**なので、敵の `stareBonus` を上げると
+**プレイヤーがあいこで溜めた にらみが、そのまま敵の武器になる。**
+これは ADR 0001 の帰結を使っているのであって、破っていない。
+
+**どの敵にどう振るかはここでは決めない。** `/balance` の仕事であり、
+`scripts/measure.ts` の「敵ごとの手の分布」の隔たりが散ることと、
+突破率のカーブが崩れないことの両方で判断する。
+
+> **`hint` は持たない**（ADR 0004）。節7 のとおり、画面には
+> `BASE_HANDS` との**差分を自動生成**して出す。手書きの説明は実値とずれる。
 
 **5体目に「グー耐性 × にらみ+2」を作らない。** にらみが速く溜まるのにグーが半減し、
 主機構が罠になる（`docs/00_research.md` 節9.5）。チョキ耐性にしてある。
@@ -974,7 +998,7 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
 ### 読み合いの材料を数字で出す（2026-08-10 追加）
 
 **情報が足りないと、プレイヤーは運ゲーを強いられていると感じる。**
-`hint` の一行（「グーを好む」）では、どれくらい好むのかも、外したら何が起きるのかも分からない。
+「グーを好む」という一行では、どれくらい好むのかも、外したら何が起きるのかも分からない。
 `docs/01_requirements.md` は敵の偏りを**公開情報**と定めているので、数字で出す。
 
 敵パネルに**3手ぶんの行**を出す。`enemyForecast(state)` の値をそのまま使う。
@@ -990,7 +1014,24 @@ export function mountApp(root: HTMLElement, rng: Rng): void;
   **フェーズが変わったことが分かる**ようにする（見出しの色か文言）
 - **敵の熱は数値としては出さない**が、「受けるダメージ」には反映される
   （`enemyForecast` が熱を適用した値を返す）。**画面に出る数字は必ず実値**にする
-- `hint` の一行は残す。数字と併記して読み方の助けにする
+### 固有能力の行は自動生成する（2026-08-11 改訂・ADR 0004）
+
+敵パネルの固有能力の行（`ui/components/enemyForecast.ts`）は、
+**`EnemyDef` から組み立てる。敵ごとに文言を手書きしない。**
+手書きすると実値とずれる（節4 の `dealtDamage` で一度踏んだ）。
+
+いま出しているもの（耐性 `<1`・あいこルール）に加えて、
+**`enemy.hands` が `BASE_HANDS` と違うところだけ**を出す。
+
+| 差 | 出す文言の例 | なぜ要るか |
+| --- | --- | --- |
+| `heal` が違う | `パーで回復しない` / `パーで5回復する` | **回復量は被弾の列に出ていない。**出さないと読めないまま変わる |
+| `stareBonus` が違う | `にらみ1つにつき +6` | 同上。**にらみは共有なので、溜める判断そのものが変わる** |
+| `damage` が違う | 出さなくてよい | **被弾の列に実値が出ている**（`enemyForecast.damage`） |
+
+- **耐性が `>1`（弱点）のときも出す。** 現在の実装は `resistance < 1` しか拾わず、
+  ボタン側は `耐性 ×1.5` と**逆の意味で**表示する。弱点を使うなら文言を分ける
+- 差が無い敵は、これまでどおり `耐性なし／あいこ時のにらみ+1` のまま
 
 ### 強化画面にも数字を出す（2026-08-10 追加）
 
