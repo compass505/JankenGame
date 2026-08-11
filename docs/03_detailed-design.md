@@ -253,7 +253,30 @@ export const UNIFORM_MIX = 0.3;
 export function enemyPhase(enemyHp: number, enemyMaxHp: number): EnemyPhase;
 export function handProbabilities(enemy: EnemyDef, phase: EnemyPhase): Readonly<Record<Hand, number>>;
 export function decideEnemyHand(enemy: EnemyDef, enemyHp: number, enemyMaxHp: number, rng: Rng): Hand;
+
+/**
+ * 敵の値表を組み立てる。**唯一の出どころ**（`docs/adr/0004-enemy-hand-table.md`）。
+ * `base` は既定の値表。**`domain` は `data` を知らないので引数で受け取る。**
+ */
+export function buildEnemyHandTable(
+  base: HandTable,
+  enemy: EnemyDef,
+  history: HeatCounts,
+  rule: HeatRule,
+  phase: EnemyPhase,
+): HandTable;
 ```
+
+> **`application` ではなく `domain` に置く理由。** ここは分岐を3つ持つロジックであり、
+> **`application` に置くと `STAGES`（＝`src/data/`）越しにしか呼べず、
+> 「`enemy.hands` が使われること」をテストできない。**
+> 数値を引数で受け取る形にすれば、任意の `EnemyDef` を渡して確かめられ、
+> `/balance` で `src/data/` を書き換えてもテストは1本も壊れない
+> （`docs/02_architecture.md`「なぜ domain が data を import しないのか」）。
+>
+> **`/test` で実際にこの穴が見つかった。** 当初は `application` の非公開関数として
+> 設計していたが、テストから任意の敵を注入する経路が無く、
+> `?? base` 側しか検証できなかったため、ここへ移した。
 
 ### `enemyPhase`
 
@@ -268,6 +291,27 @@ enemyHp * 2 <= enemyMaxHp  →  'desperate'
 **`desperate` では敵の全手のダメージに `desperateBonus` を足す**
 （`docs/adr/0003-repetition-window.md`）。**掛けるのは `application`**（節5）で、
 `domain/enemy.ts` は値を持つだけ。**条件はフェーズ判定と同じ1つのまま**で増やさない。
+
+### `buildEnemyHandTable`
+
+```
+表 = enemy.hands ?? base                     ← 敵ごとの値表を選ぶのはここだけ
+表 = applyHeat(表, history, rule)            ← damage −弱化、最低1
+phase === 'desperate' かつ enemy.desperateBonus > 0 なら
+    3手それぞれの damage に enemy.desperateBonus を足す
+heal と stareBonus は最後まで動かさない
+```
+
+**段の順序を変えない。** 弱化と本気強化は、どの値表の上にも同じように乗る。
+
+**不変条件**
+
+- `enemy.hands` を省略した敵では、`base` をそのまま使ったのと同じ結果になる
+- `phase === 'normal'` では `desperateBonus` は乗らない
+- **`heal` と `stareBonus` は入力の表のまま**（弱化も本気強化も `damage` にしか触らない）
+- `damage` は 1 未満にならない（`applyHeat` の規則）
+- 引数を書き換えず、新しい表を返す
+- **`rng` を受け取らない。** 値表の組み立てに乱数は関わらない
 
 ### `handProbabilities`
 
@@ -724,28 +768,30 @@ ctx = { playerHands, enemyHands, enemy: STAGES[state.stageIndex] }
 
 ### 敵の手の表（`enemyHandTable`）
 
-**敵は強化されないが、弱化と本気の強化は持つ。** 唯一の出どころをここに置く。
-
-```
-表 = applyHeat(enemy.hands ?? BASE_HANDS, state.enemyHeat, HEAT_RULE)
-phase === 'desperate' かつ enemy.desperateBonus > 0 なら
-    3手それぞれの damage に enemy.desperateBonus を足す
-```
-
-**敵ごとの値表を選ぶのは1行目だけ**（`docs/adr/0004-enemy-hand-table.md`）。
-**段の順序は変えない。** 弱化と本気強化は、どの値表の上にも同じように乗る。
-
-### 関数を2つに分ける（`playerHandTable` と同じ形）
+**組み立て自体は `domain` の `buildEnemyHandTable`（節3）が持つ。**
+`application` がやるのは**既定値と設定を渡すことだけ**で、式はここに書かない。
 
 ```ts
-/** 内部用。敵とフェーズを明示して組み立てる。playHand と enemyForecast が使う */
-function enemyHandTableWith(state: GameState, enemy: EnemyDef, phase: EnemyPhase): HandTable;
+/** 内部用。playHand と enemyForecast が使う */
+function enemyHandTableWith(state: GameState, enemy: EnemyDef, phase: EnemyPhase): HandTable {
+  return buildEnemyHandTable(BASE_HANDS, enemy, state.enemyHeat, HEAT_RULE, phase);
+}
 
 /** 公開。state だけから今の敵の表を返す。戦闘中でなければ null */
 export function enemyHandTable(state: GameState): HandTable | null;
 ```
 
 `playerHandTableWith` / `playerHandTable` と同じ分け方にする。
+**`BASE_HANDS` と `HEAT_RULE`（＝`src/data/`）を知っているのは `application` だけ。**
+
+**公開版の `null` の条件は、`enemyForecast` / `damagePreview` と完全に同じにする。**
+
+```
+state.phase !== 'battle' || state.battle === null || currentEnemy(state) === null  →  null
+```
+
+**`phase` が `'upgrade'` や `'result'` のときは `battle` が残っていても `null`**
+（節5 の不変条件のとおり `battle` は最後の状態を保持するため、`battle === null` だけでは足りない）。
 
 **公開する理由。** `scripts/measure.ts` が**この式の2つ目の写しを持っていて、すでにずれている。**
 貪欲プレイの読みを作るところで `applyHeat(BASE_HANDS, state.enemyHeat, HEAT_RULE)` と
@@ -758,9 +804,10 @@ export function enemyHandTable(state: GameState): HandTable | null;
 > **`handOutlook.worstOnLose` は既に一本化されている**（`enemyForecast.damage` を参照している）。
 > 敵のダメージを導出している箇所は、これで `enemyHandTableWith` の1本になる。
 
-### 具体例（そのままテストにできる）
+### 具体例（`buildEnemyHandTable` にそのまま渡せる）
 
 **「回復せず、にらみが凶器になる敵」が本気に入り、直近2手ともグーだった局面。**
+**`base` には既定の値表を渡す**（この敵は `hands` を持つので使われない）。
 
 ```
 enemy.hands = {
@@ -1247,11 +1294,18 @@ const rng = createRng(Date.now() >>> 0);
 
 **これも既存モジュールへの追加のみ。** この順で入れる。
 
-1. `domain/enemy.ts` — `EnemyDef` に `hands?: HandTable` を足し、**`hint` を消す**
+1. `domain/enemy.ts` — `EnemyDef` に `hands?: HandTable` を足し、**`hint` を消す**。
+   **`buildEnemyHandTable` を足す**（組み立ての本体。節3）
 2. `data/enemies.ts` — 5体から `hint` を消す（**値表はまだ書かない**。`/balance` の仕事）
-3. `application/game.ts` — `enemyHandTableWith` の1行目と、公開版 `enemyHandTable(state)`
+3. `application/game.ts` — `enemyHandTableWith` を `buildEnemyHandTable` への委譲に変え、
+   公開版 `enemyHandTable(state)` を足す
 4. `scripts/measure.ts` — 敵の表の写しを消し、`enemyHandTable(state)` を呼ぶ
 5. `ui/components/enemyForecast.ts` — 固有能力の行に `BASE_HANDS` との差分を足す（節7）
+
+> **`hint` を消すと既存のテストが2本巻き添えで落ちる。**
+> `tests/unit/enemy.test.ts` と `tests/unit/battle.test.ts` のフィクスチャが
+> `hint: 'テスト用'` を持っている。**この2行を消すのは 1 と同じコミットで行う**
+> （`/test` で見つけた。テストの意図は変わらないので、書き換えではなく削除）。
 
 **1〜4 まで入れた時点で、画面も計測も見た目は1つも変わらない**
 （値表を書いていないので全敵が既定に落ちる）。**ここで `npm run check` が緑に戻ること**が、

@@ -140,8 +140,8 @@ ADR 0001 の決定にこう書いてある。
 
 | ファイル | 変わるもの |
 | --- | --- |
-| `src/domain/enemy.ts` | `EnemyDef` に `hands?: HandTable`（`hint` は落とす） |
-| `src/application/game.ts` | `enemyHandTable` の1行（`enemy.hands ?? BASE_HANDS`）と、**公開版の追加** |
+| `src/domain/enemy.ts` | `EnemyDef` に `hands?: HandTable`（`hint` は落とす）。**組み立ての本体 `buildEnemyHandTable`** |
+| `src/application/game.ts` | `buildEnemyHandTable` への委譲と、**公開版 `enemyHandTable(state)` の追加** |
 | `scripts/measure.ts` | 敵の表の**2つ目の写しを消す**（下記） |
 | `src/data/enemies.ts` | 差をつけたい敵にだけ値表を書く |
 | `src/ui/components/enemyForecast.ts` | 固有能力の行に、`BASE_HANDS` との差分を出す |

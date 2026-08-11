@@ -249,3 +249,57 @@ ADR 0003 の狙い（**均等回しと2連続は罰なし、3連続から罰**�
 値の正しさは `tests/unit/game.test.ts` の2本
 （`desperate` は `normal` より `desperateBonus` だけ大きい／負けたターンの実ダメージと一致）
 で縛ってあり、どちらも緑。**次にブラウザを開いたときに目視する。**
+
+## 敵ごとの値表（2026-08-11・`docs/adr/0004-enemy-hand-table.md`）
+
+> ステータス: **`/test` 完了・`/impl` 未着手**。`npm test` は 24 件が落ちている（**それが正しい**）。
+> `npx tsc --noEmit | grep '^src/'` は空で、**失敗はすべて `tests/` に閉じている。**
+
+**追加のみで、既存の型もシグネチャも作り替えない。** 既存 133 件は1本も落ちていない。
+
+| ファイル | 行数 | 中身 |
+| --- | --- | --- |
+| `tests/unit/buildEnemyHandTable.test.ts` | 278 | **本体**。`domain` の純粋関数。節3 の不変条件と節5 の具体例 |
+| `tests/unit/enemyHandTable.test.ts` | 358 | `application` の公開関数。`null` の境界と「唯一の出どころ」 |
+| `tests/unit/enemyHands.test.ts` | 81 | `EnemyDef` の型の契約（`hands` は省略可・`hint` は無い） |
+| `tests/scenario/game.test.ts` | — | **変更なし**。仕組みだけの追加で `src/data/` の値は動かないため |
+
+### `/test` が設計の穴を1つ見つけた
+
+**当初 `buildEnemyHandTable` は `application` の非公開関数として設計されていた。**
+そこでは `enemyHandTable(state)` が `STAGES[state.stageIndex]`（＝`src/data/`）からしか
+敵を引けず、**テストから `hands` を持つ敵を注入する経路が無かった。**
+`?? base` 側（フォールバック）しか踏めず、**ADR 0004 の中心の分岐に自動テストが当たらない。**
+
+`/balance` に入るまで `src/data/enemies.ts` に値表を書かない方針なので、実データ経由でも踏めない。
+**回避のために `src/data/` を書き換えるのは禁止**したため、エージェントは
+`it.todo` で「書けない」と報告してきた。これが正しい振る舞い。
+
+**設計を直した。** 組み立てを `domain/enemy.ts` の純粋関数に移し、
+`base` と `rule` を引数で受け取る形にした（`docs/03` 節3）。
+`docs/02` の「数値をすべて引数で受け取れば `domain` のテストは `/balance` で壊れない」の
+そのままの適用であり、特別扱いではない。**実装前に見つかったので、直すのは設計1箇所で済んだ。**
+
+### `src/data/` は1つも import していない
+
+`buildEnemyHandTable.test.ts` は `base` も `rule` も**テスト内のリテラル**で作る。
+`BASE_HANDS` も `HEAT_RULE` も import しない。**`/balance` で何を動かしても壊れない。**
+
+`enemyHandTable.test.ts` は `state` 経由なので `src/data/` の値に触れるが、
+**具体的な数値は1つも焼き込んでいない**（`startGame` 直後の `playerHandTable` を基準表に使い、
+`desperateBonus` は `currentEnemy(state)` から取る。ADR 0003 のときと同じ手口）。
+
+### 意図的に書かなかったもの
+
+| 書かないもの | 理由 |
+| --- | --- |
+| 節7 の固有能力の行（差分表示） | **UI はユニットテストしない**（この文書の方針）。ブラウザで目視する |
+| シナリオテストの追加 | 仕組みだけの追加で `src/data/` の値は動かず、結合の担保は変わらない |
+| `enemyPhase` が `hands` に影響されないこと | `enemyPhase` は `EnemyDef` を受け取らない。**同じ引数どうしを比べるだけの空のテスト**になる |
+
+### `/impl` への申し送り
+
+**`hint` を消すと既存の2ファイルが巻き添えで落ちる。**
+`tests/unit/enemy.test.ts` と `tests/unit/battle.test.ts` のフィクスチャが
+`hint: 'テスト用'` を持っている。**`domain/enemy.ts` と同じコミットでこの2行を消す**
+（`docs/03` 節8）。テストの意図は変わらないので、書き換えではなく削除。
