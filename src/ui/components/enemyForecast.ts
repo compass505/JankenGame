@@ -1,4 +1,5 @@
 import type { EnemyForecast } from '@/application/game';
+import { BASE_HANDS } from '@/data/hands';
 import type { EnemyDef } from '@/domain/enemy';
 import { HANDS } from '@/domain/hand';
 import type { Hand } from '@/domain/hand';
@@ -113,12 +114,47 @@ function renderAbility(enemy: EnemyDef): HTMLElement {
   if (rules.length === 0) {
     rules.push('耐性なし', 'あいこ時のにらみ+1');
   }
+  rules.push(...handTableRules(enemy));
 
   const detail = document.createElement('strong');
   detail.className = 'forecast__ability-detail';
   detail.textContent = rules.join('／');
   ability.appendChild(detail);
   return ability;
+}
+
+/**
+ * 既定の値表と違うところだけを文にする（`docs/03_detailed-design.md` 節7・ADR 0004）。
+ *
+ * **`damage` は出さない。** 被弾の列が弱化と本気強化まで含んだ実値を既に出しており、
+ * ここに基礎値を並べるとどちらが本物か分からなくなる。
+ * **`heal` と `stareBonus` は画面のどこにも出ていない**ので、ここで出さないと
+ * 「回復量とにらみ倍率が読めないまま変わる」ことになる。
+ *
+ * 敵ごとに文言を手書きしない。手書きは実値とずれる。
+ */
+function handTableRules(enemy: EnemyDef): string[] {
+  const hands = enemy.hands;
+  if (hands === undefined) return [];
+
+  const rules: string[] = [];
+  for (const hand of HANDS) {
+    const label = HAND_LABEL[hand];
+    const value = hands[hand];
+    const base = BASE_HANDS[hand];
+
+    if (value.heal !== base.heal) {
+      rules.push(value.heal === 0 ? `${label}で回復しない` : `${label}で${String(value.heal)}回復する`);
+    }
+    if (value.stareBonus !== base.stareBonus) {
+      rules.push(
+        value.stareBonus === 0
+          ? `${label}ににらみが乗らない`
+          : `${label}はにらみ1つにつき +${String(value.stareBonus)}`,
+      );
+    }
+  }
+  return rules;
 }
 
 function formatProbability(forecast: EnemyForecast, hand: Hand): string {
