@@ -873,7 +873,7 @@ body {
   z-index: 1;
 }
 
-.hp-bar--enemy {
+.battle-stage .hp-bar--enemy {
   position: absolute;
   z-index: 3;
   right: 12px;
